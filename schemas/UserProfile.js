@@ -17,5 +17,3 @@ const userProfileSchema = new Schema({
 );   
 
 module.exports = model('UserProfile', userProfileSchema);
-
-//testing the capabillities of git
