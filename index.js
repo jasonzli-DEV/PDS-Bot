@@ -4,14 +4,25 @@ const path = require('path');
 const { Client, GatewayIntentBits, Partials, Collection, ActivityType, PresenceUpdateStatus, Events, REST, Routes } = require('discord.js');
 const mongoose = require('mongoose');
 
-// Load all commands once
+// Recursively get all .js command files from commands and subfolders
+function getAllCommandFiles(dir, files = []) {
+    for (const file of fs.readdirSync(dir)) {
+        const fullPath = path.join(dir, file);
+        if (fs.statSync(fullPath).isDirectory()) {
+            getAllCommandFiles(fullPath, files);
+        } else if (file.endsWith('.js')) {
+            files.push(fullPath);
+        }
+    }
+    return files;
+}
+
 const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+const commandFiles = getAllCommandFiles(commandsPath);
 const commands = [];
 const clientCommands = new Collection();
 
-for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
+for (const filePath of commandFiles) {
     const command = require(filePath);
     if ('data' in command && 'execute' in command) {
         clientCommands.set(command.data.name, command);
