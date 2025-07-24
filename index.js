@@ -54,6 +54,9 @@ const client = new Client({
 
 client.commands = clientCommands;
 
+// Optional: Load cooldown clearing event
+const clearCooldowns = require('./events/ready/clear-cooldown');
+
 // On ready
 client.once(Events.ClientReady, async () => {
     console.log(`Ready! Logged in as ${client.user.tag}`);
@@ -92,6 +95,9 @@ client.once(Events.ClientReady, async () => {
 
     console.log(`Bot status set to: ${statusType}`);
     console.log(`Activity set to: ${activityType} ${activityName}`);
+
+    // Start cooldown clearing event
+    clearCooldowns();
 });
 
 // Handle interactions
