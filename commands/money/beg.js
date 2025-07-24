@@ -24,40 +24,40 @@ module.exports = {
             await interaction.deferReply();
 
             const commandName = 'beg';
-            const userId = interaction.user.id;
+            const userID = interaction.user.id;
 
-            let cooldown = await Cooldown.findOne({ userId, command: commandName });
+            let cooldown = await Cooldown.findOne({ userID, commandName });
 
-            if (cooldown && Date.now() < cooldown.endsAt) {
+            if (cooldown && Date.now() < cooldown.endsAt.getTime()) {
                 const prettyMs = (await import('pretty-ms')).default;
                 await interaction.editReply(
-                    `You are on cooldown, come back after ${prettyMs(cooldown.endsAt - Date.now())}`
+                    `You are on cooldown, come back after ${prettyMs(cooldown.endsAt.getTime() - Date.now())}`
                 );
                 return;
             }
 
             if (!cooldown) {
-                cooldown = new Cooldown({ userId, command: commandName });
+                cooldown = new Cooldown({ userID, commandName, endsAt: new Date() });
             }
 
             const chance = getRandomNumber(0, 100);
 
             if (chance < 40) {
                 await interaction.editReply("You didn't get anything this time. Try again later.");
-                cooldown.endsAt = Date.now() + 300_000;
+                cooldown.endsAt = new Date(Date.now() + 300_000); // 5 minutes
                 await cooldown.save();
                 return;
             }
 
             const amount = getRandomNumber(30, 150);
 
-            let userProfile = await UserProfile.findOne({ userId });
+            let userProfile = await UserProfile.findOne({ userId: userID });
             if (!userProfile) {
-                userProfile = new UserProfile({ userId, balance: 0 });
+                userProfile = new UserProfile({ userId: userID, balance: 0 });
             }
 
             userProfile.balance += amount;
-            cooldown.endsAt = Date.now() + 300_000;
+            cooldown.endsAt = new Date(Date.now() + 300_000); // 5 minutes
 
             await Promise.all([cooldown.save(), userProfile.save()]);
 
