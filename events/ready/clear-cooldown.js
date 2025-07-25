@@ -5,7 +5,7 @@ module.exports = () => {
         try {
             const cooldowns = await Cooldown.find().select('endsAt');
             for (const cooldown of cooldowns) {
-                if (Date.now() >= cooldown.endsAt) {
+                if (Date.now() >= cooldown.endsAt.getTime()) {
                     await Cooldown.deleteOne({ _id: cooldown._id });
                 }
             }

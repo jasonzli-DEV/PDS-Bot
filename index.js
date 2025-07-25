@@ -65,7 +65,7 @@ const client = new Client({
 
 client.commands = clientCommands;
 
-// Optional: Load cooldown clearing event
+// Load cooldown clearing event
 const clearCooldowns = require('./events/ready/clear-cooldown');
 
 // On ready

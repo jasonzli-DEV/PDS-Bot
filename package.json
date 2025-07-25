@@ -12,6 +12,7 @@
   "description": "",
   "dependencies": {
     "discord.js": "^14.21.0",
+    "djs-commander": "^0.0.50",
     "dotenv": "^17.2.0",
     "mongoose": "^8.16.4",
     "mongose": "^0.0.2-security",
