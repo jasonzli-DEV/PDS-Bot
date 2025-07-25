@@ -5,6 +5,10 @@ const userProfileSchema = new Schema({
       type: String,
       required: true,
     },
+    guildId: {
+      type: String,
+      requireed: true
+    },
     balance: {
       type: Number,
       default: 100,
