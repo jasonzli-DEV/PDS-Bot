@@ -13,22 +13,28 @@ function getRoleLevel(member) {
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('ban')
-        .setDescription('Ban a user from the server.')
+        .setName('timeout')
+        .setDescription('Timeout a user for a specified duration.')
         .addUserOption(option =>
             option.setName('target')
-                .setDescription('User to ban')
+                .setDescription('User to timeout')
+                .setRequired(true)
+        )
+        .addIntegerOption(option =>
+            option.setName('duration')
+                .setDescription('Timeout duration in minutes')
                 .setRequired(true)
         )
         .addStringOption(option =>
             option.setName('reason')
-                .setDescription('Reason for ban')
+                .setDescription('Reason for timeout')
                 .setRequired(false)
         )
-        .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
+        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
     async execute(interaction) {
         const targetUser = interaction.options.getUser('target');
+        const duration = interaction.options.getInteger('duration');
         const reason = interaction.options.getString('reason') || 'No reason provided';
 
         const executor = interaction.member;
@@ -41,22 +47,28 @@ module.exports = {
             return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
         }
         if (executorLevel <= targetLevel) {
-            return interaction.reply({ content: 'You can only ban users with a lower role than yourself.', ephemeral: true });
+            return interaction.reply({ content: 'You can only timeout users with a lower role than yourself.', ephemeral: true });
         }
         if (!target) {
             return interaction.reply({ content: 'User not found in this server.', ephemeral: true });
         }
+        if (!target.moderatable) {
+            return interaction.reply({ content: 'I cannot timeout this user.', ephemeral: true });
+        }
 
         try {
-            await target.ban({ reason });
+            await target.timeout(duration * 60 * 1000, reason);
             await targetUser.send(
-                `You have been banned from **${interaction.guild.name}**.\nReason: ${reason}`
+                `You have been timed out in **${interaction.guild.name}** for ${duration} minute(s).\nReason: ${reason}`
             ).catch(() => {});
-            console.log(`[BAN] ${interaction.user.tag} banned ${targetUser.tag} for: ${reason}`);
-            await interaction.reply({ content: `✅ <@${targetUser.id}> has been banned.\nReason: ${reason}` });
+            console.log(`[TIMEOUT] ${interaction.user.tag} timed out ${targetUser.tag} for ${duration} min. Reason: ${reason}`);
+            await interaction.reply({
+                content: `✅ <@${targetUser.id}> has been timed out for ${duration} minute(s).\nReason: ${reason}`,
+                allowedMentions: { users: [targetUser.id] }
+            });
         } catch (error) {
-            console.error(`[BAN] Error banning ${targetUser.tag}:`, error);
-            await interaction.reply({ content: 'Failed to ban the user.', ephemeral: true });
+            console.error(`[TIMEOUT] Error timing out ${targetUser.tag}:`, error);
+            await interaction.reply({ content: 'Failed to timeout the user.', ephemeral: true });
         }
     }
 };

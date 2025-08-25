@@ -11,15 +11,13 @@ module.exports = {
         let work = await Work.findOne({ userId, guildId });
 
         const now = new Date();
-        // If work exists and not expired, check if claim is ready
         if (work && work.nextClaim > now && work.expiresAt > now) {
             const remaining = Math.ceil((work.nextClaim - now) / 1000);
             return interaction.reply({ content: `You are already working! Claim in ${Math.ceil(remaining/60)} minutes.`, ephemeral: true });
         }
 
-        // If work exists but expired, reset it
         const nextClaim = new Date(Date.now() + 5 * 60 * 1000);
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 5 min to claim after ready
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
         if (!work) {
             work = new Work({
@@ -32,10 +30,10 @@ module.exports = {
         } else {
             work.nextClaim = nextClaim;
             work.expiresAt = expiresAt;
-            // reward stays the same until claimed
         }
 
         await work.save();
+        console.log(`[WORK-START] ${interaction.user.tag} started working in ${interaction.guild.name}`);
         await interaction.reply({ content: 'You started working! Use `/work-claim` in 5 minutes to get your reward.', ephemeral: true });
     }
 };

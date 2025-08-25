@@ -25,6 +25,7 @@ module.exports = {
 
             const commandName = 'beg';
             const userID = interaction.user.id;
+            const guildId = interaction.guild.id;
 
             let cooldown = await Cooldown.findOne({ userID, commandName });
 
@@ -43,6 +44,7 @@ module.exports = {
             const chance = getRandomNumber(0, 100);
 
             if (chance < 40) {
+                console.log(`[BEG] ${interaction.user.tag} failed to beg in ${interaction.guild.name}`);
                 await interaction.editReply("You didn't get anything this time. Try again later.");
                 cooldown.endsAt = new Date(Date.now() + 300_000); // 5 minutes
                 await cooldown.save();
@@ -51,9 +53,9 @@ module.exports = {
 
             const amount = getRandomNumber(30, 150);
 
-            let userProfile = await UserProfile.findOne({ userId: userID });
+            let userProfile = await UserProfile.findOne({ userId: userID, guildId });
             if (!userProfile) {
-                userProfile = new UserProfile({ userId: userID, balance: 0 });
+                userProfile = new UserProfile({ userId: userID, guildId, balance: 0 });
             }
 
             userProfile.balance += amount;
@@ -61,9 +63,10 @@ module.exports = {
 
             await Promise.all([cooldown.save(), userProfile.save()]);
 
+            console.log(`[BEG] ${interaction.user.tag} begged and got ${amount} in ${interaction.guild.name}. New balance: ${userProfile.balance}`);
             await interaction.editReply(`You got ${amount}! \nNew balance: ${userProfile.balance}`);
         } catch (error) {
-            console.error(`Error handling /beg: ${error}`);
+            console.error(`[BEG] Error handling /beg: ${error}`);
             await interaction.editReply('An error occurred while processing your request.');
         }
     },

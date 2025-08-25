@@ -7,7 +7,10 @@ module.exports = {
     async execute(interaction) {
         const sent = await interaction.reply({ content: 'Pinging...', fetchReply: true });
         const pingTime = sent.createdTimestamp - interaction.createdTimestamp;
-        
-        await interaction.editReply(`Pong! 🏓\nBot Latency: ${pingTime}ms\nAPI Latency: ${Math.round(interaction.client.ws.ping)}ms`);
+        const apiLatency = Math.round(interaction.client.ws.ping);
+
+        console.log(`[PING] ${interaction.user.tag} ran ping: Bot Latency ${pingTime}ms, API Latency ${apiLatency}ms`);
+
+        await interaction.editReply(`Pong! 🏓\nBot Latency: ${pingTime}ms\nAPI Latency: ${apiLatency}ms`);
     },
 };

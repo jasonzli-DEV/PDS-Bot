@@ -1,38 +1,62 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
+const OWNER_ROLE_ID = process.env.OWNER_ROLE_ID;
+const MANAGER_ROLE_ID = process.env.MANAGER_ROLE_ID;
+const MODERATOR_ROLE_ID = process.env.MODERATOR_ROLE_ID;
+
+function getRoleLevel(member) {
+    if (member.roles.cache.has(OWNER_ROLE_ID)) return 3;
+    if (member.roles.cache.has(MANAGER_ROLE_ID)) return 2;
+    if (member.roles.cache.has(MODERATOR_ROLE_ID)) return 1;
+    return 0;
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('kick')
-        .setDescription('Kick a user from the server')
+        .setDescription('Kick a user from the server.')
         .addUserOption(option =>
-            option.setName('user')
-                .setDescription('The user to kick')
-                .setRequired(true))
+            option.setName('target')
+                .setDescription('User to kick')
+                .setRequired(true)
+        )
         .addStringOption(option =>
             option.setName('reason')
-                .setDescription('Reason for kicking')
-                .setRequired(false))
+                .setDescription('Reason for kick')
+                .setRequired(false)
+        )
         .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers),
+
     async execute(interaction) {
-        const target = interaction.options.getUser('user');
-        const reason = interaction.options.getString('reason') || 'No Reason Provided';
+        const targetUser = interaction.options.getUser('target');
+        const reason = interaction.options.getString('reason') || 'No reason provided';
 
-        const targetMember = await interaction.guild.members.fetch(target.id).catch(() => null);
+        const executor = interaction.member;
+        const target = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
-        if (!targetMember) {
-            return interaction.reply({ content: 'That user is not in the server!', ephemeral: true });
+        const executorLevel = getRoleLevel(executor);
+        const targetLevel = getRoleLevel(target);
+
+        if (executorLevel === 0) {
+            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
         }
-
-        if (!targetMember.kickable) {
-            return interaction.reply({ content: 'I cannot kick this user. They may have higher permissions than me.', ephemeral: true });
+        if (executorLevel <= targetLevel) {
+            return interaction.reply({ content: 'You can only kick users with a lower role than yourself.', ephemeral: true });
+        }
+        if (!target) {
+            return interaction.reply({ content: 'User not found in this server.', ephemeral: true });
         }
 
         try {
-            await targetMember.kick(reason);
-            await interaction.reply(`Successfully kicked **${target.tag}** from the server.\nReason: ${reason}`);
+            await target.kick(reason);
+            await targetUser.send(
+                `You have been kicked from **${interaction.guild.name}**.\nReason: ${reason}`
+            ).catch(() => {});
+            console.log(`[KICK] ${interaction.user.tag} kicked ${targetUser.tag} for: ${reason}`);
+            await interaction.reply({ content: `✅ <@${targetUser.id}> has been kicked.\nReason: ${reason}` });
         } catch (error) {
-            console.error(error);
-            await interaction.reply({ content: 'There was an error trying to kick this user!', ephemeral: true });
+            console.error(`[KICK] Error kicking ${targetUser.tag}:`, error);
+            await interaction.reply({ content: 'Failed to kick the user.', ephemeral: true });
         }
-    },
+    }
 };

@@ -68,6 +68,14 @@ client.commands = clientCommands;
 // Load cooldown clearing event
 const clearCooldowns = require('./events/ready/clear-cooldown');
 
+// Register reply-to-hello event
+const replyToHello = require('./events/messageCreate/reply-to-hello.js');
+client.on('messageCreate', replyToHello);
+
+// Register AFK listener event
+const afkListener = require('./events/messageCreate/afk-listener.js');
+client.on('messageCreate', afkListener);
+
 // On ready
 client.once(Events.ClientReady, async () => {
     console.log(`Ready! Logged in as ${client.user.tag}`);
