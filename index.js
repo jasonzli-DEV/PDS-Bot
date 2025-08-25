@@ -5,6 +5,8 @@ const { Client, GatewayIntentBits, Partials, Collection, ActivityType, PresenceU
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, StreamType, generateDependencyReport, getVoiceConnections } = require('@discordjs/voice');
 const sodium = require('libsodium-wrappers');
 const mongoose = require('mongoose');
+const prism = require('prism-media');
+const { pipeline } = require('stream');
 
 // Log voice dependency report for debugging
 console.log('Voice Dependency Report:', generateDependencyReport());
@@ -130,38 +132,74 @@ client.on('messageCreate', afkListener);
 // Function to play audio
 async function playAudio(connection) {
     try {
-        // Wait for sodium to be ready
         await sodium.ready;
 
         const player = createAudioPlayer();
-        const resource = createAudioResource(path.join(__dirname, 'music.opus'), {
+        
+        // Create FFmpeg input stream
+        const transcoder = new prism.FFmpeg({
+            args: [
+                '-analyzeduration', '0',
+                '-loglevel', '0',
+                '-f', 's16le',
+                '-ar', '48000',
+                '-ac', '2',
+            ],
+        });
+
+        // Create Opus encoder
+        const opus = new prism.opus.Encoder({
+            rate: 48000,
+            channels: 2,
+            frameSize: 960
+        });
+
+        // Create input stream
+        const input = fs.createReadStream(path.join(__dirname, 'music.opus'));
+        
+        // Pipeline the streams
+        pipeline(
+            input,
+            transcoder,
+            opus,
+            (err) => {
+                if (err) {
+                    console.error('Pipeline error:', err);
+                }
+            }
+        );
+
+        // Create audio resource from the pipeline
+        const resource = createAudioResource(opus, {
             inputType: StreamType.Opus,
             inlineVolume: true
         });
 
-        resource.volume?.setVolume(1); // Set volume to 100%
+        resource.volume?.setVolume(1);
         player.play(resource);
         connection.subscribe(player);
 
-        // When the song ends, play it again
+        // Handle state changes and errors
         player.on('stateChange', (oldState, newState) => {
+            console.log(`Player state changed from ${oldState.status} to ${newState.status}`);
             if (newState.status === 'idle') {
-                playAudio(connection);
+                setTimeout(() => playAudio(connection), 100);
             }
         });
 
         player.on('error', error => {
             console.error('Player error:', error);
-            setTimeout(() => playAudio(connection), 5000); // Retry after 5 seconds
+            setTimeout(() => playAudio(connection), 5000);
         });
 
-        connection.on('stateChange', (oldState, newState) => {
-            console.log(`Connection transitioned from ${oldState.status} to ${newState.status}`);
+        input.on('error', error => {
+            console.error('Input stream error:', error);
+            player.stop();
         });
 
     } catch (error) {
         console.error('Error in playAudio:', error);
-        setTimeout(() => playAudio(connection), 5000); // Retry after 5 seconds
+        setTimeout(() => playAudio(connection), 5000);
     }
 }
 
