@@ -11,11 +11,17 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "discord.js": "^14.21.0",
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.19.0",
+    "@snazzah/davey": "^0.1.6",
+    "discord.js": "^14.22.1",
     "djs-commander": "^0.0.50",
-    "dotenv": "^17.2.0",
-    "mongoose": "^8.16.4",
+    "dotenv": "^17.2.1",
+    "ffmpeg-static": "^5.2.0",
+    "libsodium-wrappers": "^0.7.15",
+    "mongoose": "^8.18.0",
     "mongose": "^0.0.2-security",
-    "pretty-ms": "^9.2.0"
+    "pretty-ms": "^9.2.0",
+    "sodium-native": "^5.0.8"
   }
 }

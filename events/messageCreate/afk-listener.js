@@ -3,23 +3,46 @@ const Afk = require('../../schemas/Afk');
 module.exports = async (message) => {
     if (message.author.bot || !message.guild) return;
 
-    const userId = message.author.id;
-    const guildId = message.guild.id;
+    try {
+        const afk = await Afk.findOne({
+            userId: message.author.id,
+            guildId: message.guild.id
+        });
 
-    // Remove AFK status if user sends a message
-    const afk = await Afk.findOne({ userId, guildId });
-    if (afk) {
-        await Afk.deleteOne({ userId, guildId });
-        message.reply('Welcome back! You are no longer AFK.');
-    }
+        if (afk) {
+            // Remove AFK status
+            await Afk.deleteOne({
+                userId: message.author.id,
+                guildId: message.guild.id
+            });
 
-    // Notify if mentioned user is AFK
-    for (const user of message.mentions.users.values()) {
-        const mentionedAfk = await Afk.findOne({ userId: user.id, guildId });
-        if (mentionedAfk) {
-            message.channel.send(
-                `<@${user.id}> is currently AFK: ${mentionedAfk.reason} (since <t:${Math.floor(mentionedAfk.since.getTime()/1000)}:R>)`
-            );
+            // Restore original nickname
+            try {
+                await message.member.setNickname(afk.originalName);
+                console.log(`Restored nickname for ${message.member.displayName}: ${afk.originalName}`);
+                
+                await message.reply('Welcome back! Your AFK status has been removed.');
+            } catch (nickError) {
+                console.error(`Failed to restore nickname for ${message.member.displayName}:`, nickError);
+                await message.reply('Welcome back! (Note: Could not restore your original nickname)');
+            }
         }
+
+        // Check mentioned users
+        for (const [id, member] of message.mentions.members) {
+            const mentionedAfk = await Afk.findOne({
+                userId: id,
+                guildId: message.guild.id
+            });
+
+            if (mentionedAfk) {
+                const timeSince = Math.floor(mentionedAfk.since.getTime() / 1000);
+                await message.channel.send(
+                    `${member.displayName} is AFK: ${mentionedAfk.reason} (since <t:${timeSince}:R>)`
+                );
+            }
+        }
+    } catch (error) {
+        console.error('AFK listener error:', error);
     }
 };

@@ -2,7 +2,57 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Partials, Collection, ActivityType, PresenceUpdateStatus, Events, REST, Routes } = require('discord.js');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, StreamType, generateDependencyReport, getVoiceConnections } = require('@discordjs/voice');
+const sodium = require('libsodium-wrappers');
 const mongoose = require('mongoose');
+
+// Log voice dependency report for debugging
+console.log('Voice Dependency Report:', generateDependencyReport());
+
+// Handle graceful shutdown
+async function handleShutdown() {
+    console.log('Shutting down...');
+
+    try {
+        // Disconnect from all voice channels
+        const connections = getVoiceConnections();
+        connections.forEach(connection => {
+            console.log(`Disconnecting from voice channel in guild ${connection.joinConfig.guildId}`);
+            connection.destroy();
+        });
+
+        // Set AFK status in all guilds
+        const guilds = client.guilds.cache;
+        for (const [_, guild] of guilds) {
+            try {
+                const member = guild.members.cache.get(client.user.id);
+                if (member && member.manageable) {
+                    await member.setNickname(`[AFK] ${client.user.username}`);
+                    console.log(`Set AFK status in ${guild.name}`);
+                }
+            } catch (error) {
+                console.error(`Failed to set AFK status in guild ${guild.name}:`, error);
+            }
+        }
+
+        // Close MongoDB connection
+        await mongoose.connection.close();
+        console.log('Closed MongoDB connection');
+
+        // Destroy the client
+        await client.destroy();
+        console.log('Successfully shutdown Discord client');
+        
+        process.exit(0);
+    } catch (error) {
+        console.error('Error during shutdown:', error);
+        process.exit(1);
+    }
+}
+
+// Register shutdown handlers
+process.on('SIGINT', handleShutdown);
+process.on('SIGTERM', handleShutdown);
 
 // Recursively get all .js command files from commands and subfolders
 function getAllCommandFiles(dir, files = []) {
@@ -53,7 +103,8 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildVoiceStates
     ],
     partials: [
         Partials.Channel,
@@ -76,6 +127,44 @@ client.on('messageCreate', replyToHello);
 const afkListener = require('./events/messageCreate/afk-listener.js');
 client.on('messageCreate', afkListener);
 
+// Function to play audio
+async function playAudio(connection) {
+    try {
+        // Wait for sodium to be ready
+        await sodium.ready;
+
+        const player = createAudioPlayer();
+        const resource = createAudioResource(path.join(__dirname, 'music.opus'), {
+            inputType: StreamType.Opus,
+            inlineVolume: true
+        });
+
+        resource.volume?.setVolume(1); // Set volume to 100%
+        player.play(resource);
+        connection.subscribe(player);
+
+        // When the song ends, play it again
+        player.on('stateChange', (oldState, newState) => {
+            if (newState.status === 'idle') {
+                playAudio(connection);
+            }
+        });
+
+        player.on('error', error => {
+            console.error('Player error:', error);
+            setTimeout(() => playAudio(connection), 5000); // Retry after 5 seconds
+        });
+
+        connection.on('stateChange', (oldState, newState) => {
+            console.log(`Connection transitioned from ${oldState.status} to ${newState.status}`);
+        });
+
+    } catch (error) {
+        console.error('Error in playAudio:', error);
+        setTimeout(() => playAudio(connection), 5000); // Retry after 5 seconds
+    }
+}
+
 // On ready
 client.once(Events.ClientReady, async () => {
     console.log(`Ready! Logged in as ${client.user.tag}`);
@@ -83,6 +172,35 @@ client.once(Events.ClientReady, async () => {
     // Deploy commands
     await deployCommands();
     console.log(`Commands deployed globally.`);
+
+    // Join voice channel and play music
+    try {
+        await sodium.ready;
+        const channel = await client.channels.fetch(process.env.VOICE_CHANNEL_ID);
+        
+        if (!channel) {
+            console.error('Could not find voice channel!');
+            return;
+        }
+
+        const connection = joinVoiceChannel({
+            channelId: channel.id,
+            guildId: channel.guild.id,
+            adapterCreator: channel.guild.voiceAdapterCreator,
+            selfDeaf: false,
+            selfMute: false
+        });
+
+        connection.on('error', error => {
+            console.error('Voice connection error:', error);
+        });
+
+        await playAudio(connection);
+        console.log('Joined voice channel and started playing music');
+
+    } catch (error) {
+        console.error('Error joining voice channel:', error);
+    }
 
     // Set bot status/activity
     const statusType = process.env.BOT_STATUS || 'online';
@@ -124,17 +242,28 @@ client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     const command = client.commands.get(interaction.commandName);
-
     if (!command) return;
 
     try {
         await command.execute(interaction);
     } catch (error) {
-        console.error(error);
-        if (interaction.replied || interaction.deferred) {
-            await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
-        } else {
-            await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+        console.error(`Error executing ${interaction.commandName}:`, error);
+        
+        try {
+            const errorMessage = {
+                content: 'There was an error while executing this command!',
+                ephemeral: true
+            };
+
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.reply(errorMessage);
+            } else if (interaction.deferred) {
+                await interaction.editReply(errorMessage);
+            } else {
+                await interaction.followUp(errorMessage);
+            }
+        } catch (replyError) {
+            console.error('Error sending error message:', replyError);
         }
     }
 });
