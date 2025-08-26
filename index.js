@@ -14,7 +14,6 @@ console.log('Voice Dependency Report:', generateDependencyReport());
 // Handle graceful shutdown
 async function handleShutdown() {
     console.log('Shutting down...');
-
     try {
         // Disconnect from all voice channels
         const connections = getVoiceConnections();
@@ -129,77 +128,72 @@ client.on('messageCreate', replyToHello);
 const afkListener = require('./events/messageCreate/afk-listener.js');
 client.on('messageCreate', afkListener);
 
-// Function to play audio
+// --- RAM Optimized Audio Playback Section ---
+/**
+ * Cleans up listeners and destroys streams
+ */
+function cleanupAudio(player, streams = []) {
+    player.removeAllListeners();
+    streams.forEach(stream => {
+        if (stream && typeof stream.destroy === 'function') stream.destroy();
+        if (stream && typeof stream.unpipe === 'function') stream.unpipe();
+    });
+}
+
+/**
+ * Play audio in a RAM-efficient way
+ */
 async function playAudio(connection) {
     try {
         await sodium.ready;
 
-        const player = createAudioPlayer();
-        
-        // Create FFmpeg input stream
-        const transcoder = new prism.FFmpeg({
-            args: [
-                '-analyzeduration', '0',
-                '-loglevel', '0',
-                '-f', 's16le',
-                '-ar', '48000',
-                '-ac', '2',
-            ],
-        });
+        // Lower highWaterMark: less RAM used for buffering
+        const input = fs.createReadStream(path.join(__dirname, 'music.opus'), { highWaterMark: 1 << 16 }); // 64 KB
 
-        // Create Opus encoder
-        const opus = new prism.opus.Encoder({
-            rate: 48000,
-            channels: 2,
-            frameSize: 960
-        });
-
-        // Create input stream
-        const input = fs.createReadStream(path.join(__dirname, 'music.opus'));
-        
-        // Pipeline the streams
-        pipeline(
-            input,
-            transcoder,
-            opus,
-            (err) => {
-                if (err) {
-                    console.error('Pipeline error:', err);
-                }
-            }
-        );
-
-        // Create audio resource from the pipeline
-        const resource = createAudioResource(opus, {
+        // If music.opus is already Opus-encoded, no need to transcode or re-encode
+        const resource = createAudioResource(input, {
             inputType: StreamType.Opus,
             inlineVolume: true
         });
-
         resource.volume?.setVolume(1);
+
+        const player = createAudioPlayer();
         player.play(resource);
         connection.subscribe(player);
 
-        // Handle state changes and errors
-        player.on('stateChange', (oldState, newState) => {
-            console.log(`Player state changed from ${oldState.status} to ${newState.status}`);
+        // Cleanup when idle or errored, only re-play if desired
+        player.once('stateChange', (oldState, newState) => {
             if (newState.status === 'idle') {
-                setTimeout(() => playAudio(connection), 100);
+                cleanupAudio(player, [input]);
+                // Optionally, you can restart playback here if looping is desired
+                // setTimeout(() => playAudio(connection), 100);
             }
         });
 
-        player.on('error', error => {
+        player.once('error', error => {
             console.error('Player error:', error);
-            setTimeout(() => playAudio(connection), 5000);
+            cleanupAudio(player, [input]);
+            // Optionally, you can restart playback here if looping is desired
+            // setTimeout(() => playAudio(connection), 5000);
         });
 
-        input.on('error', error => {
+        input.once('error', error => {
             console.error('Input stream error:', error);
             player.stop();
+            cleanupAudio(player, [input]);
         });
 
+        // Optional: Log RAM usage periodically for debugging
+        if (!playAudio._memInterval) {
+            playAudio._memInterval = setInterval(() => {
+                const mem = process.memoryUsage();
+                console.log(`[MEMORY] RSS: ${(mem.rss / 1024 / 1024).toFixed(2)} MB, Heap: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+            }, 60000);
+        }
     } catch (error) {
         console.error('Error in playAudio:', error);
-        setTimeout(() => playAudio(connection), 5000);
+        // Optionally, you can restart playback here if looping is desired
+        // setTimeout(() => playAudio(connection), 5000);
     }
 }
 
