@@ -21,8 +21,10 @@
     "libsodium-wrappers": "^0.7.15",
     "mongoose": "^8.18.0",
     "mongose": "^0.0.2-security",
+    "play-dl": "^1.9.7",
     "pretty-ms": "^9.2.0",
     "prism-media": "^1.3.5",
-    "sodium-native": "^5.0.8"
+    "sodium-native": "^5.0.8",
+    "ytdl-core": "^4.11.5"
   }
 }
