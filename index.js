@@ -128,7 +128,7 @@ client.on('messageCreate', replyToHello);
 const afkListener = require('./events/messageCreate/afk-listener.js');
 client.on('messageCreate', afkListener);
 
-// --- RAM Optimized Audio Playback Section ---
+// --- RAM Optimized Audio Playback Section WITH LOOPING ---
 /**
  * Cleans up listeners and destroys streams
  */
@@ -141,7 +141,7 @@ function cleanupAudio(player, streams = []) {
 }
 
 /**
- * Play audio in a RAM-efficient way
+ * Play audio in a RAM-efficient way, with looping support
  */
 async function playAudio(connection) {
     try {
@@ -161,26 +161,28 @@ async function playAudio(connection) {
         player.play(resource);
         connection.subscribe(player);
 
-        // Cleanup when idle or errored, only re-play if desired
+        // Loop playback when idle (end of track)
         player.once('stateChange', (oldState, newState) => {
             if (newState.status === 'idle') {
                 cleanupAudio(player, [input]);
-                // Optionally, you can restart playback here if looping is desired
-                // setTimeout(() => playAudio(connection), 100);
+                // Loop: replay after a brief delay
+                setTimeout(() => playAudio(connection), 250);
             }
         });
 
         player.once('error', error => {
             console.error('Player error:', error);
             cleanupAudio(player, [input]);
-            // Optionally, you can restart playback here if looping is desired
-            // setTimeout(() => playAudio(connection), 5000);
+            // Optional: restart playback after error
+            setTimeout(() => playAudio(connection), 1000);
         });
 
         input.once('error', error => {
             console.error('Input stream error:', error);
             player.stop();
             cleanupAudio(player, [input]);
+            // Optional: restart playback after error
+            setTimeout(() => playAudio(connection), 1000);
         });
 
         // Optional: Log RAM usage periodically for debugging
@@ -192,8 +194,8 @@ async function playAudio(connection) {
         }
     } catch (error) {
         console.error('Error in playAudio:', error);
-        // Optionally, you can restart playback here if looping is desired
-        // setTimeout(() => playAudio(connection), 5000);
+        // Restart playback after error
+        setTimeout(() => playAudio(connection), 1000);
     }
 }
 
