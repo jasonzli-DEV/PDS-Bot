@@ -8,17 +8,128 @@ const mongoose = require('mongoose');
 const prism = require('prism-media');
 const { pipeline } = require('stream');
 
-// Log voice dependency report for debugging
-console.log('Voice Dependency Report:', generateDependencyReport());
+// Track active connections and resources
+const activeConnections = new Map();
+
+// Memory-efficient cleanup function
+function cleanupAudio(player, streams = []) {
+    try {
+        if (player) {
+            player.stop();
+            player.removeAllListeners();
+        }
+        
+        streams.forEach(stream => {
+            if (stream) {
+                if (typeof stream.destroy === 'function') stream.destroy();
+                if (typeof stream.unpipe === 'function') stream.unpipe();
+                if (typeof stream.end === 'function') stream.end();
+            }
+        });
+
+        // Force garbage collection if available
+        if (global.gc) global.gc();
+    } catch (error) {
+        console.error('Cleanup error:', error);
+    }
+}
+
+// Optimized audio playback function
+async function playAudio(connection) {
+    try {
+        await sodium.ready;
+
+        // Cleanup existing connection
+        const existing = activeConnections.get(connection.joinConfig.guildId);
+        if (existing) {
+            cleanupAudio(existing.player, existing.streams);
+        }
+
+        const player = createAudioPlayer();
+        const streams = [];
+
+        // Create FFmpeg input stream with optimized settings
+        const transcoder = new prism.FFmpeg({
+            args: [
+                '-analyzeduration', '0',
+                '-loglevel', '0',
+                '-f', 's16le',
+                '-ar', '48000',
+                '-ac', '2',
+                '-bufsize', '64k'
+            ]
+        });
+        streams.push(transcoder);
+
+        // Create input stream with smaller chunks
+        const input = fs.createReadStream(path.join(__dirname, 'music.opus'), {
+            highWaterMark: 1024 * 32 // 32KB chunks
+        });
+        streams.push(input);
+
+        // Create audio resource with optimized settings
+        const resource = createAudioResource(input.pipe(transcoder), {
+            inputType: StreamType.Raw,
+            inlineVolume: true,
+            silencePaddingFrames: 0
+        });
+
+        resource.volume?.setVolume(1);
+        player.play(resource);
+        connection.subscribe(player);
+
+        // Store active connection data
+        activeConnections.set(connection.joinConfig.guildId, {
+            player,
+            streams,
+            resource
+        });
+
+        // Memory-efficient state change handling
+        player.on('stateChange', (oldState, newState) => {
+            if (newState.status === 'idle') {
+                cleanupAudio(player, streams);
+                activeConnections.delete(connection.joinConfig.guildId);
+                
+                setTimeout(() => {
+                    playAudio(connection).catch(console.error);
+                }, 100);
+            }
+        });
+
+        player.on('error', error => {
+            console.error('Player error:', error);
+            cleanupAudio(player, streams);
+            activeConnections.delete(connection.joinConfig.guildId);
+            setTimeout(() => playAudio(connection), 1000);
+        });
+
+        connection.on('stateChange', (oldState, newState) => {
+            if (newState.status === 'destroyed') {
+                cleanupAudio(player, streams);
+                activeConnections.delete(connection.joinConfig.guildId);
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in playAudio:', error);
+        setTimeout(() => playAudio(connection), 5000);
+    }
+}
 
 // Handle graceful shutdown
 async function handleShutdown() {
     console.log('Shutting down...');
     try {
-        // Disconnect from all voice channels
+        // Cleanup all active connections
+        for (const [guildId, { player, streams }] of activeConnections.entries()) {
+            cleanupAudio(player, streams);
+            activeConnections.delete(guildId);
+        }
+
+        // Disconnect from voice channels
         const connections = getVoiceConnections();
         connections.forEach(connection => {
-            console.log(`Disconnecting from voice channel in guild ${connection.joinConfig.guildId}`);
             connection.destroy();
         });
 
@@ -29,21 +140,14 @@ async function handleShutdown() {
                 const member = guild.members.cache.get(client.user.id);
                 if (member && member.manageable) {
                     await member.setNickname(`[AFK] ${client.user.username}`);
-                    console.log(`Set AFK status in ${guild.name}`);
                 }
             } catch (error) {
                 console.error(`Failed to set AFK status in guild ${guild.name}:`, error);
             }
         }
 
-        // Close MongoDB connection
         await mongoose.connection.close();
-        console.log('Closed MongoDB connection');
-
-        // Destroy the client
         await client.destroy();
-        console.log('Successfully shutdown Discord client');
-        
         process.exit(0);
     } catch (error) {
         console.error('Error during shutdown:', error);
@@ -55,7 +159,12 @@ async function handleShutdown() {
 process.on('SIGINT', handleShutdown);
 process.on('SIGTERM', handleShutdown);
 
-// Recursively get all .js command files from commands and subfolders
+// Command handling setup
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = getAllCommandFiles(commandsPath);
+const commands = [];
+const clientCommands = new Collection();
+
 function getAllCommandFiles(dir, files = []) {
     for (const file of fs.readdirSync(dir)) {
         const fullPath = path.join(dir, file);
@@ -68,18 +177,11 @@ function getAllCommandFiles(dir, files = []) {
     return files;
 }
 
-const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = getAllCommandFiles(commandsPath);
-const commands = [];
-const clientCommands = new Collection();
-
 for (const filePath of commandFiles) {
     const command = require(filePath);
     if ('data' in command && 'execute' in command) {
         clientCommands.set(command.data.name, command);
         commands.push(command.data.toJSON());
-    } else {
-        console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
     }
 }
 
@@ -87,12 +189,10 @@ for (const filePath of commandFiles) {
 const deployCommands = async () => {
     try {
         const rest = new REST().setToken(process.env.BOT_TOKEN);
-        console.log(`Started refreshing application slash commands globally.`);
         await rest.put(
             Routes.applicationCommands(process.env.CLIENT_ID),
-            { body: commands },
+            { body: commands }
         );
-        console.log('Successfully reloaded all commands!');
     } catch (error) {
         console.error('Error deploying commands:', error);
     }
@@ -117,90 +217,19 @@ const client = new Client({
 
 client.commands = clientCommands;
 
-// Load cooldown clearing event
+// Load events
 const clearCooldowns = require('./events/ready/clear-cooldown');
-
-// Register reply-to-hello event
 const replyToHello = require('./events/messageCreate/reply-to-hello.js');
-client.on('messageCreate', replyToHello);
-
-// Register AFK listener event
 const afkListener = require('./events/messageCreate/afk-listener.js');
+
+client.on('messageCreate', replyToHello);
 client.on('messageCreate', afkListener);
 
-// --- RAM Optimized Audio Playback Section WITH LOOPING ---
-/**
- * Cleans up listeners and destroys streams
- */
-function cleanupAudio(player, streams = []) {
-    player.removeAllListeners();
-    streams.forEach(stream => {
-        if (stream && typeof stream.destroy === 'function') stream.destroy();
-        if (stream && typeof stream.unpipe === 'function') stream.unpipe();
-    });
-}
-
-/**
- * Play audio in a RAM-efficient way, with looping support
- */
-async function playAudio(connection) {
-    try {
-        await sodium.ready;
-
-        const player = createAudioPlayer();
-        
-        // Create the audio resource with different settings
-        const resource = createAudioResource(path.join(__dirname, 'music.opus'), {
-            inputType: StreamType.Arbitrary, // Changed from Opus to Arbitrary
-            inlineVolume: true,
-            silencePaddingFrames: 1
-        });
-
-        resource.volume?.setVolume(1);
-        player.play(resource);
-        connection.subscribe(player);
-
-        // Handle state changes for looping
-        player.on('stateChange', (oldState, newState) => {
-            console.log(`Player state changed from ${oldState.status} to ${newState.status}`);
-            if (newState.status === 'idle') {
-                // Restart playback with a small delay
-                setTimeout(() => {
-                    try {
-                        playAudio(connection);
-                    } catch (error) {
-                        console.error('Error restarting playback:', error);
-                    }
-                }, 500);
-            }
-        });
-
-        // Handle player errors
-        player.on('error', error => {
-            console.error('Player error:', error);
-            setTimeout(() => playAudio(connection), 1000);
-        });
-
-        // Handle connection state changes
-        connection.on('stateChange', (oldState, newState) => {
-            console.log(`Connection state changed from ${oldState.status} to ${newState.status}`);
-        });
-
-    } catch (error) {
-        console.error('Error in playAudio:', error);
-        setTimeout(() => playAudio(connection), 5000);
-    }
-}
-
-// On ready
+// Ready event handler
 client.once(Events.ClientReady, async () => {
     console.log(`Ready! Logged in as ${client.user.tag}`);
-
-    // Deploy commands
     await deployCommands();
-    console.log(`Commands deployed globally.`);
 
-    // Join voice channel and play music
     try {
         await sodium.ready;
         const channel = await client.channels.fetch(process.env.VOICE_CHANNEL_ID);
@@ -220,34 +249,19 @@ client.once(Events.ClientReady, async () => {
 
         connection.on('error', error => {
             console.error('Voice connection error:', error);
+            cleanupAudio(activeConnections.get(connection.joinConfig.guildId)?.player);
+            activeConnections.delete(connection.joinConfig.guildId);
         });
 
         await playAudio(connection);
-        console.log('Joined voice channel and started playing music');
-
     } catch (error) {
         console.error('Error joining voice channel:', error);
     }
 
-    // Set bot status/activity
+    // Set bot status
     const statusType = process.env.BOT_STATUS || 'online';
     const activityType = process.env.ACTIVITY_TYPE || 'PLAYING';
     const activityName = process.env.ACTIVITY_NAME || 'Discord';
-
-    const activityTypeMap = {
-        'PLAYING': ActivityType.Playing,
-        'WATCHING': ActivityType.Watching,
-        'LISTENING': ActivityType.Listening,
-        'STREAMING': ActivityType.Streaming,
-        'COMPETING': ActivityType.Competing
-    };
-
-    const statusMap = {
-        'online': PresenceUpdateStatus.Online,
-        'idle': PresenceUpdateStatus.Idle,
-        'dnd': PresenceUpdateStatus.DoNotDisturb,
-        'invisible': PresenceUpdateStatus.Invisible
-    };
 
     client.user.setPresence({
         status: statusMap[statusType],
@@ -257,14 +271,10 @@ client.once(Events.ClientReady, async () => {
         }]
     });
 
-    console.log(`Bot status set to: ${statusType}`);
-    console.log(`Activity set to: ${activityType} ${activityName}`);
-
-    // Start cooldown clearing event
     clearCooldowns();
 });
 
-// Handle interactions
+// Interaction handler
 client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -275,13 +285,12 @@ client.on(Events.InteractionCreate, async interaction => {
         await command.execute(interaction);
     } catch (error) {
         console.error(`Error executing ${interaction.commandName}:`, error);
+        const errorMessage = {
+            content: 'There was an error while executing this command!',
+            ephemeral: true
+        };
         
         try {
-            const errorMessage = {
-                content: 'There was an error while executing this command!',
-                ephemeral: true
-            };
-
             if (!interaction.deferred && !interaction.replied) {
                 await interaction.reply(errorMessage);
             } else if (interaction.deferred) {
@@ -295,7 +304,23 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 });
 
-// Connect to MongoDB and login
+// Status maps
+const activityTypeMap = {
+    'PLAYING': ActivityType.Playing,
+    'WATCHING': ActivityType.Watching,
+    'LISTENING': ActivityType.Listening,
+    'STREAMING': ActivityType.Streaming,
+    'COMPETING': ActivityType.Competing
+};
+
+const statusMap = {
+    'online': PresenceUpdateStatus.Online,
+    'idle': PresenceUpdateStatus.Idle,
+    'dnd': PresenceUpdateStatus.DoNotDisturb,
+    'invisible': PresenceUpdateStatus.Invisible
+};
+
+// Start the bot
 (async () => {
     try {
         await mongoose.connect(process.env.MONGODB_URI);
