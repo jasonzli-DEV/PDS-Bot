@@ -211,7 +211,7 @@ client.once(Events.ClientReady, async () => {
 
     // Deploy commands
     await deployCommands();
-    console.log(`Commands deployed globally.`);
+    console.log('Commands deployed globally.');
 
     // Join voice channel and play music
     try {
