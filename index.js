@@ -206,8 +206,7 @@ async function playAudio(connection) {
 // On ready
 client.once(Events.ClientReady, async () => {
     console.log('Ready!');
-    console.log('Logged in as ${client.user.tag}');
-}
+    console.log(`Logged in as ${client.user.tag}`);
 
     // Deploy commands
     await deployCommands();
