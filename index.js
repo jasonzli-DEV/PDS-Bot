@@ -1,14 +1,18 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, Partials, Collection, ActivityType, PresenceUpdateStatus, Events, REST, Routes } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, StreamType, generateDependencyReport, getVoiceConnections } = require('@discordjs/voice');
+const { 
+    Client, GatewayIntentBits, Partials, Collection, 
+    ActivityType, PresenceUpdateStatus, Events, REST, Routes 
+} = require('discord.js');
+const { 
+    joinVoiceChannel, createAudioPlayer, createAudioResource, 
+    StreamType, generateDependencyReport, getVoiceConnections 
+} = require('@discordjs/voice');
 const sodium = require('libsodium-wrappers');
 const mongoose = require('mongoose');
-const prism = require('prism-media');
-const { pipeline } = require('stream');
 
-// Log voice dependency report for debugging
+// Log voice dependency report
 console.log('Voice Dependency Report:', generateDependencyReport());
 
 // Handle graceful shutdown
@@ -52,11 +56,10 @@ async function handleShutdown() {
     }
 }
 
-// Register shutdown handlers
 process.on('SIGINT', handleShutdown);
 process.on('SIGTERM', handleShutdown);
 
-// Recursively get all .js command files from commands and subfolders
+// Recursively get all .js command files
 function getAllCommandFiles(dir, files = []) {
     for (const file of fs.readdirSync(dir)) {
         const fullPath = path.join(dir, file);
@@ -84,7 +87,6 @@ for (const filePath of commandFiles) {
     }
 }
 
-// Deploy slash commands
 const deployCommands = async () => {
     try {
         const rest = new REST().setToken(process.env.BOT_TOKEN);
@@ -118,83 +120,44 @@ const client = new Client({
 
 client.commands = clientCommands;
 
-// Load cooldown clearing event
+// Load events
 const clearCooldowns = require('./events/ready/clear-cooldown');
-
-// Register reply-to-hello event
 const replyToHello = require('./events/messageCreate/reply-to-hello.js');
 client.on('messageCreate', replyToHello);
-
-// Register AFK listener event
 const afkListener = require('./events/messageCreate/afk-listener.js');
 client.on('messageCreate', afkListener);
 
-// Function to play audio
+// Function to play looping audio
 async function playAudio(connection) {
     try {
-        await sodium.ready;
-
         const player = createAudioPlayer();
-        
-        // Create FFmpeg input stream
-        const transcoder = new prism.FFmpeg({
-            args: [
-                '-analyzeduration', '0',
-                '-loglevel', '0',
-                '-f', 's16le',
-                '-ar', '48000',
-                '-ac', '2',
-            ],
-        });
 
-        // Create Opus encoder
-        const opus = new prism.opus.Encoder({
-            rate: 48000,
-            channels: 2,
-            frameSize: 960
-        });
-
-        // Create input stream
-        const input = fs.createReadStream(path.join(__dirname, 'music.opus'));
-        
-        // Pipeline the streams
-        pipeline(
-            input,
-            transcoder,
-            opus,
-            (err) => {
-                if (err) {
-                    console.error('Pipeline error:', err);
-                }
+        const createResource = () => createAudioResource(
+            fs.createReadStream(path.join(__dirname, 'music.opus')),
+            {
+                inputType: StreamType.Opus,
+                inlineVolume: true
             }
         );
 
-        // Create audio resource from the pipeline
-        const resource = createAudioResource(opus, {
-            inputType: StreamType.Opus,
-            inlineVolume: true
-        });
-
+        const resource = createResource();
         resource.volume?.setVolume(1);
         player.play(resource);
         connection.subscribe(player);
 
-        // Handle state changes and errors
+        // Loop when finished
         player.on('stateChange', (oldState, newState) => {
-            console.log(`Player state changed from ${oldState.status} to ${newState.status}`);
-            if (newState.status === 'idle') {
-                setTimeout(() => playAudio(connection), 100);
+            if (oldState.status !== 'idle' && newState.status === 'idle') {
+                console.log('Restarting music loop...');
+                const newResource = createResource();
+                newResource.volume?.setVolume(1);
+                player.play(newResource);
             }
         });
 
         player.on('error', error => {
             console.error('Player error:', error);
             setTimeout(() => playAudio(connection), 5000);
-        });
-
-        input.on('error', error => {
-            console.error('Input stream error:', error);
-            player.stop();
         });
 
     } catch (error) {
@@ -208,9 +171,7 @@ client.once(Events.ClientReady, async () => {
     console.log('Ready!');
     console.log(`Logged in as ${client.user.tag}`);
 
-    // Deploy commands
     await deployCommands();
-    console.log('Commands deployed globally.');
 
     // Join voice channel and play music
     try {
@@ -241,7 +202,7 @@ client.once(Events.ClientReady, async () => {
         console.error('Error joining voice channel:', error);
     }
 
-    // Set bot status/activity
+    // Set bot presence
     const statusType = process.env.BOT_STATUS || 'online';
     const activityType = process.env.ACTIVITY_TYPE || 'PLAYING';
     const activityName = process.env.ACTIVITY_NAME || 'Discord';
@@ -272,7 +233,6 @@ client.once(Events.ClientReady, async () => {
     console.log(`Bot status set to: ${statusType}`);
     console.log(`Activity set to: ${activityType} ${activityName}`);
 
-    // Start cooldown clearing event
     clearCooldowns();
 });
 
