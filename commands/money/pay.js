@@ -1,4 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
+const mongoose = require('mongoose');
 const UserProfile = require('../../schemas/UserProfile');
 
 module.exports = {
@@ -91,13 +92,18 @@ module.exports = {
 
         } catch (error) {
             console.error('[PAY] Command error:', error);
-            if (!interaction.replied) {
+            if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({
                     content: 'There was an error processing your payment.',
-                    ephemeral: true
+                    flags: 64 // EPHEMERAL flag
                 });
-            } else {
+            } else if (interaction.deferred) {
                 await interaction.editReply('There was an error processing your payment.');
+            } else {
+                await interaction.followUp({
+                    content: 'There was an error processing your payment.',
+                    flags: 64 // EPHEMERAL flag
+                });
             }
         }
     },

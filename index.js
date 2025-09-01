@@ -199,16 +199,6 @@ const afkListener = require('./events/messageCreate/afk-listener.js');
 client.on('messageCreate', afkListener);
 
 // --- RAM Optimized Audio Playback Section WITH LOOPING ---
-/**
- * Cleans up listeners and destroys streams
- */
-function cleanupAudio(player, streams = []) {
-    player.removeAllListeners();
-    streams.forEach(stream => {
-        if (stream && typeof stream.destroy === 'function') stream.destroy();
-        if (stream && typeof stream.unpipe === 'function') stream.unpipe();
-    });
-}
 
 /**
  * Play audio in a RAM-efficient way, with looping support
@@ -216,13 +206,20 @@ function cleanupAudio(player, streams = []) {
 async function playAudio(connection) {
     try {
         await sodium.ready;
+        // Always convert to Discord-compatible PCM using ffmpeg
+        const inputPath = path.join(__dirname, 'music.opus');
+        const ffmpegProcess = spawn(ffmpeg, [
+            '-i', inputPath,
+            '-analyzeduration', '0',
+            '-loglevel', '0',
+            '-f', 's16le',
+            '-ar', '48000',
+            '-ac', '2',
+            'pipe:1'
+        ], { stdio: ['ignore', 'pipe', 'ignore'] });
 
-        // Lower highWaterMark: less RAM used for buffering
-        const input = fs.createReadStream(path.join(__dirname, 'music.opus'), { highWaterMark: 1 << 16 }); // 64 KB
-
-        // If music.opus is already Opus-encoded, no need to transcode or re-encode
-        const resource = createAudioResource(input, {
-            inputType: StreamType.Opus,
+        const resource = createAudioResource(ffmpegProcess.stdout, {
+            inputType: StreamType.Raw,
             inlineVolume: true
         });
         resource.volume?.setVolume(1);
@@ -234,25 +231,47 @@ async function playAudio(connection) {
         // Loop playback when idle (end of track)
         player.once('stateChange', (oldState, newState) => {
             if (newState.status === 'idle') {
-                cleanupAudio(player, [input]);
-                // Loop: replay after a brief delay
-                setTimeout(() => playAudio(connection), 250);
+                cleanupAudio(player, [ffmpegProcess]);
+                ffmpegProcess.kill();
+                setTimeout(() => {
+                    if (connection.state.status !== 'destroyed') {
+                        playAudio(connection).catch(console.error);
+                    }
+                }, 250);
             }
         });
 
         player.once('error', error => {
             console.error('Player error:', error);
-            cleanupAudio(player, [input]);
-            // Optional: restart playback after error
-            setTimeout(() => playAudio(connection), 1000);
+            cleanupAudio(player, [ffmpegProcess]);
+            ffmpegProcess.kill();
+            setTimeout(() => {
+                if (connection.state.status !== 'destroyed') {
+                    playAudio(connection).catch(console.error);
+                }
+            }, 1000);
         });
 
-        input.once('error', error => {
-            console.error('Input stream error:', error);
+        ffmpegProcess.stdout.once('error', error => {
+            console.error('FFmpeg stream error:', error);
             player.stop();
-            cleanupAudio(player, [input]);
-            // Optional: restart playback after error
-            setTimeout(() => playAudio(connection), 1000);
+            cleanupAudio(player, [ffmpegProcess]);
+            ffmpegProcess.kill();
+            setTimeout(() => {
+                if (connection.state.status !== 'destroyed') {
+                    playAudio(connection).catch(console.error);
+                }
+            }, 1000);
+        });
+
+        ffmpegProcess.on('error', error => {
+            console.error('FFmpeg process error:', error);
+            cleanupAudio(player, [ffmpegProcess]);
+            setTimeout(() => {
+                if (connection.state.status !== 'destroyed') {
+                    playAudio(connection).catch(console.error);
+                }
+            }, 1000);
         });
 
         // Optional: Log RAM usage periodically for debugging
@@ -264,7 +283,6 @@ async function playAudio(connection) {
         }
     } catch (error) {
         console.error('Error in playAudio:', error);
-        // Restart playback after error
         setTimeout(() => playAudio(connection), 1000);
     }
 }
@@ -289,8 +307,27 @@ client.once(Events.ClientReady, async () => {
         });
         connection.on('error', error => {
             console.error('Voice connection error:', error);
-            cleanupAudio(activeConnections.get(connection.joinConfig.guildId)?.player);
-            activeConnections.delete(connection.joinConfig.guildId);
+            const activeConnection = activeConnections.get(connection.joinConfig.guildId);
+            if (activeConnection) {
+                cleanupAudio(activeConnection.player, activeConnection.streams);
+                activeConnections.delete(connection.joinConfig.guildId);
+            }
+            // Attempt to reconnect after a delay
+            setTimeout(async () => {
+                try {
+                    console.log('Attempting to reconnect to voice channel...');
+                    const newConnection = joinVoiceChannel({
+                        channelId: channel.id,
+                        guildId: channel.guild.id,
+                        adapterCreator: channel.guild.voiceAdapterCreator,
+                        selfDeaf: false,
+                        selfMute: false
+                    });
+                    await playAudio(newConnection);
+                } catch (reconnectError) {
+                    console.error('Failed to reconnect:', reconnectError);
+                }
+            }, 5000);
         });
         await playAudio(connection);
     } catch (error) {
@@ -327,7 +364,7 @@ client.on(Events.InteractionCreate, async interaction => {
 (async () => {
     try {
         if (process.env.MONGODB_URI) await mongoose.connect(process.env.MONGODB_URI);
-        console.log('Connected to MongoDB (if configured)');
+        console.log('Connected to MongoDB');
         await client.login(process.env.BOT_TOKEN);
     } catch (err) {
         console.error('Failed to start bot:', err);
