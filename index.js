@@ -187,12 +187,89 @@ const client = new Client({
 });
 client.commands = clientCommands;
 
-// Load events
-try { client.on('messageCreate', require('./events/messageCreate/reply-to-hello')); } catch {}
-try { client.on('messageCreate', require('./events/messageCreate/afk-listener')); } catch {}
-try { require('./events/ready/clear-cooldown'); } catch {}
+// Load cooldown clearing event
+const clearCooldowns = require('./events/ready/clear-cooldown');
 
-// Ready event handler
+// Register reply-to-hello event
+const replyToHello = require('./events/messageCreate/reply-to-hello.js');
+client.on('messageCreate', replyToHello);
+
+// Register AFK listener event
+const afkListener = require('./events/messageCreate/afk-listener.js');
+client.on('messageCreate', afkListener);
+
+// --- RAM Optimized Audio Playback Section WITH LOOPING ---
+/**
+ * Cleans up listeners and destroys streams
+ */
+function cleanupAudio(player, streams = []) {
+    player.removeAllListeners();
+    streams.forEach(stream => {
+        if (stream && typeof stream.destroy === 'function') stream.destroy();
+        if (stream && typeof stream.unpipe === 'function') stream.unpipe();
+    });
+}
+
+/**
+ * Play audio in a RAM-efficient way, with looping support
+ */
+async function playAudio(connection) {
+    try {
+        await sodium.ready;
+
+        // Lower highWaterMark: less RAM used for buffering
+        const input = fs.createReadStream(path.join(__dirname, 'music.opus'), { highWaterMark: 1 << 16 }); // 64 KB
+
+        // If music.opus is already Opus-encoded, no need to transcode or re-encode
+        const resource = createAudioResource(input, {
+            inputType: StreamType.Opus,
+            inlineVolume: true
+        });
+        resource.volume?.setVolume(1);
+
+        const player = createAudioPlayer();
+        player.play(resource);
+        connection.subscribe(player);
+
+        // Loop playback when idle (end of track)
+        player.once('stateChange', (oldState, newState) => {
+            if (newState.status === 'idle') {
+                cleanupAudio(player, [input]);
+                // Loop: replay after a brief delay
+                setTimeout(() => playAudio(connection), 250);
+            }
+        });
+
+        player.once('error', error => {
+            console.error('Player error:', error);
+            cleanupAudio(player, [input]);
+            // Optional: restart playback after error
+            setTimeout(() => playAudio(connection), 1000);
+        });
+
+        input.once('error', error => {
+            console.error('Input stream error:', error);
+            player.stop();
+            cleanupAudio(player, [input]);
+            // Optional: restart playback after error
+            setTimeout(() => playAudio(connection), 1000);
+        });
+
+        // Optional: Log RAM usage periodically for debugging
+        if (!playAudio._memInterval) {
+            playAudio._memInterval = setInterval(() => {
+                const mem = process.memoryUsage();
+                console.log(`[MEMORY] RSS: ${(mem.rss / 1024 / 1024).toFixed(2)} MB, Heap: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+            }, 60000);
+        }
+    } catch (error) {
+        console.error('Error in playAudio:', error);
+        // Restart playback after error
+        setTimeout(() => playAudio(connection), 1000);
+    }
+}
+
+// On ready
 client.once(Events.ClientReady, async () => {
     console.log(`Ready! Logged in as ${client.user.tag}`);
     deployCommands().catch(console.error);
