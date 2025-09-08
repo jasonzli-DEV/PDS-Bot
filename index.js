@@ -796,9 +796,9 @@ async function updateLeaderboards(client) {
         leaderboardState[guildId] = { rich: null, xp: null };
     }
 
-    // Get all users in the guild
+    // Get all users in the guild (excluding bots)
     const guildMembers = await channel.guild.members.fetch();
-    const allUserIds = guildMembers.map(member => member.user.id);
+    const allUserIds = guildMembers.filter(member => !member.user.bot).map(member => member.user.id);
 
     // Create profiles for all users who don't have them
     for (const userId of allUserIds) {
