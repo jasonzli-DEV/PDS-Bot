@@ -271,8 +271,9 @@ async function playAudio(connection) {
         console.log('🎵 Music playback started successfully!');
         setBotStatus('streaming'); // Set streaming status when music is playing
 
-        // Loop playback when idle (end of track)
-        player.once('stateChange', (oldState, newState) => {
+        // Remove any previous listeners to avoid duplicate handlers
+        player.removeAllListeners('stateChange');
+        player.on('stateChange', (oldState, newState) => {
             if (newState.status === 'idle') {
                 console.log('🎵 Music track ended, restarting loop...');
                 cleanupAudio(player, [ffmpegProcess]);
@@ -281,6 +282,8 @@ async function playAudio(connection) {
                     if (connection.state.status !== 'destroyed') {
                         console.log('🔄 Restarting music playback...');
                         playAudio(connection).catch(console.error);
+                    } else {
+                        console.log('Voice connection destroyed, not restarting music.');
                     }
                 }, 250);
             }
