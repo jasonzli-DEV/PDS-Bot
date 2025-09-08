@@ -796,8 +796,18 @@ async function updateLeaderboards(client) {
         leaderboardState[guildId] = { rich: null, xp: null };
     }
 
-    // Top 10 richest for this guild
-    const richest = await UserProfile.find({ guildId, balance: { $gt: 0 } }).sort({ balance: -1 }).limit(10);
+    // Get all users in the guild
+    const guildMembers = await channel.guild.members.fetch();
+    const allUserIds = guildMembers.map(member => member.user.id);
+
+    // Top 10 richest for this guild (including users with 0 balance)
+    const richest = await UserProfile.find({ guildId, userId: { $in: allUserIds } }).sort({ balance: -1, userId: 1 }).limit(10);
+    // Add users with no profile (0 balance) to the list
+    const richestUserIds = richest.map(u => u.userId);
+    const missingRichUsers = allUserIds.filter(id => !richestUserIds.includes(id));
+    for (const userId of missingRichUsers.slice(0, 10 - richest.length)) {
+        richest.push({ userId, balance: 0 });
+    }
     let richDesc = richest.length ? richest.map((u, i) => `**${i+1}.** <@${u.userId}> — **${u.balance}** coins`).join('\n') : 'No data.';
     const richEmbed = new EmbedBuilder()
         .setTitle(`🏆 Top 10 Richest - ${channel.guild.name}`)
@@ -805,8 +815,14 @@ async function updateLeaderboards(client) {
         .setColor('#FFD700')
         .setTimestamp();
 
-    // Top 10 XP for this guild
-    const topXP = await LevelProfile.find({ guildId }).sort({ level: -1, xp: -1 }).limit(10);
+    // Top 10 XP for this guild (including users with 0 XP)
+    const topXP = await LevelProfile.find({ guildId, userId: { $in: allUserIds } }).sort({ level: -1, xp: -1, userId: 1 }).limit(10);
+    // Add users with no profile (0 XP, level 1) to the list
+    const xpUserIds = topXP.map(u => u.userId);
+    const missingXPUsers = allUserIds.filter(id => !xpUserIds.includes(id));
+    for (const userId of missingXPUsers.slice(0, 10 - topXP.length)) {
+        topXP.push({ userId, level: 1, xp: 0 });
+    }
     let xpDesc = topXP.length ? topXP.map((u, i) => `**${i+1}.** <@${u.userId}> — Level **${u.level}** (${u.xp} XP)`).join('\n') : 'No data.';
     const xpEmbed = new EmbedBuilder()
         .setTitle(`📈 Top 10 Most XP - ${channel.guild.name}`)
