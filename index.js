@@ -875,7 +875,7 @@ async function updateLeaderboards(client) {
 // In ClientReady event, start interval and force update
 client.once(Events.ClientReady, async () => {
     // ... existing code ...
-    setInterval(() => updateLeaderboards(client), 5 * 60 * 1000);
+    setInterval(() => updateLeaderboards(client), 60 * 1000);
     await updateLeaderboards(client); // Force update on startup
     // ... existing code ...
 });
