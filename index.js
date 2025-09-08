@@ -273,7 +273,6 @@ async function playAudio(connection) {
         connection.subscribe(player);
 
         console.log('🎵 Music playback started successfully!');
-        setBotStatus('streaming'); // Set streaming status when music is playing
 
         // Remove any previous listeners to avoid duplicate handlers
         player.removeAllListeners('stateChange');
@@ -366,20 +365,7 @@ client.once(Events.ClientReady, async () => {
     // Set initial bot status from environment variables
     setBotStatus('online', true);
     
-    // Set up status rotation every 5 minutes (optional - can be disabled by setting ROTATE_STATUS=false in .env)
-    if (process.env.ROTATE_STATUS !== 'false') {
-        setInterval(() => {
-            if (useEnvStatus) {
-                // Use environment variables
-                setBotStatus('online', true);
-            } else {
-                // Use dynamic rotation
-                const statusKeys = ['online', 'idle', 'competing', 'streaming'];
-                const randomStatus = statusKeys[Math.floor(Math.random() * statusKeys.length)];
-                setBotStatus(randomStatus);
-            }
-        }, 300000); // 5 minutes
-    }
+    // Bot status only uses .env values, no rotation
 
     // Voice channel connection (optional - only if VOICE_CHANNEL_ID is set)
     if (process.env.VOICE_CHANNEL_ID) {
@@ -428,6 +414,28 @@ client.once(Events.ClientReady, async () => {
                     }
                 }, 5000);
             });
+
+        // Auto-reconnect on disconnect
+        connection.on('stateChange', (oldState, newState) => {
+            if (newState.status === 'disconnected') {
+                console.log('🎵 Voice connection disconnected, attempting to reconnect...');
+                setTimeout(async () => {
+                    try {
+                        const newConnection = joinVoiceChannel({
+                            channelId: channel.id,
+                            guildId: channel.guild.id,
+                            adapterCreator: channel.guild.voiceAdapterCreator,
+                            selfDeaf: false,
+                            selfMute: false
+                        });
+                        await playAudio(newConnection);
+                        console.log('✅ Successfully reconnected to voice channel');
+                    } catch (reconnectError) {
+                        console.error('❌ Failed to reconnect after disconnect:', reconnectError);
+                    }
+                }, 3000);
+            }
+        });
            
         await playAudio(connection);
             console.log('✅ Successfully joined voice channel and started music');
@@ -761,12 +769,12 @@ client.on(Events.InteractionCreate, async interaction => {
 const UserProfile = require('./schemas/UserProfile');
 const LevelProfile = require('./schemas/LevelProfile');
 const leaderboardStatePath = path.join(__dirname, 'leaderboard-messages.json');
-let leaderboardState = { rich: null, xp: null };
+let leaderboardState = {};
 try {
     if (fs.existsSync(leaderboardStatePath)) {
         leaderboardState = JSON.parse(fs.readFileSync(leaderboardStatePath, 'utf8'));
     }
-} catch (e) { leaderboardState = { rich: null, xp: null }; }
+} catch (e) { leaderboardState = {}; }
 
 async function updateLeaderboards(client) {
     const channelId = process.env.LEADERBOARD_CHANNEL_ID;
@@ -783,56 +791,61 @@ async function updateLeaderboards(client) {
         return;
     }
 
-    // Top 10 richest
-    const richest = await UserProfile.find({ balance: { $gt: 0 } }).sort({ balance: -1 }).limit(10);
+    const guildId = channel.guild.id;
+    if (!leaderboardState[guildId]) {
+        leaderboardState[guildId] = { rich: null, xp: null };
+    }
+
+    // Top 10 richest for this guild
+    const richest = await UserProfile.find({ guildId, balance: { $gt: 0 } }).sort({ balance: -1 }).limit(10);
     let richDesc = richest.length ? richest.map((u, i) => `**${i+1}.** <@${u.userId}> — **${u.balance}** coins`).join('\n') : 'No data.';
     const richEmbed = new EmbedBuilder()
-        .setTitle('🏆 Top 10 Richest')
+        .setTitle(`🏆 Top 10 Richest - ${channel.guild.name}`)
         .setDescription(richDesc)
         .setColor('#FFD700')
         .setTimestamp();
 
-    // Top 10 XP
-    const topXP = await LevelProfile.find({}).sort({ level: -1, xp: -1 }).limit(10);
+    // Top 10 XP for this guild
+    const topXP = await LevelProfile.find({ guildId }).sort({ level: -1, xp: -1 }).limit(10);
     let xpDesc = topXP.length ? topXP.map((u, i) => `**${i+1}.** <@${u.userId}> — Level **${u.level}** (${u.xp} XP)`).join('\n') : 'No data.';
     const xpEmbed = new EmbedBuilder()
-        .setTitle('📈 Top 10 Most XP')
+        .setTitle(`📈 Top 10 Most XP - ${channel.guild.name}`)
         .setDescription(xpDesc)
         .setColor('#5865F2')
         .setTimestamp();
 
     // Send or edit messages
     // Richest
-    if (leaderboardState.rich) {
+    if (leaderboardState[guildId].rich) {
         try {
-            const msg = await channel.messages.fetch(leaderboardState.rich);
+            const msg = await channel.messages.fetch(leaderboardState[guildId].rich);
             await msg.edit({ embeds: [richEmbed] });
-            console.log('[Leaderboard] Edited richest leaderboard message.');
+            console.log(`[Leaderboard] Edited richest leaderboard message for ${channel.guild.name}.`);
         } catch (e) {
-            console.log('[Leaderboard] Failed to edit richest message, sending new one.', e);
+            console.log(`[Leaderboard] Failed to edit richest message for ${channel.guild.name}, sending new one.`, e);
             const msg = await channel.send({ embeds: [richEmbed] });
-            leaderboardState.rich = msg.id;
+            leaderboardState[guildId].rich = msg.id;
         }
     } else {
         const msg = await channel.send({ embeds: [richEmbed] });
-        leaderboardState.rich = msg.id;
-        console.log('[Leaderboard] Sent new richest leaderboard message.');
+        leaderboardState[guildId].rich = msg.id;
+        console.log(`[Leaderboard] Sent new richest leaderboard message for ${channel.guild.name}.`);
     }
     // XP
-    if (leaderboardState.xp) {
+    if (leaderboardState[guildId].xp) {
         try {
-            const msg = await channel.messages.fetch(leaderboardState.xp);
+            const msg = await channel.messages.fetch(leaderboardState[guildId].xp);
             await msg.edit({ embeds: [xpEmbed] });
-            console.log('[Leaderboard] Edited XP leaderboard message.');
+            console.log(`[Leaderboard] Edited XP leaderboard message for ${channel.guild.name}.`);
         } catch (e) {
-            console.log('[Leaderboard] Failed to edit XP message, sending new one.', e);
+            console.log(`[Leaderboard] Failed to edit XP message for ${channel.guild.name}, sending new one.`, e);
             const msg = await channel.send({ embeds: [xpEmbed] });
-            leaderboardState.xp = msg.id;
+            leaderboardState[guildId].xp = msg.id;
         }
     } else {
         const msg = await channel.send({ embeds: [xpEmbed] });
-        leaderboardState.xp = msg.id;
-        console.log('[Leaderboard] Sent new XP leaderboard message.');
+        leaderboardState[guildId].xp = msg.id;
+        console.log(`[Leaderboard] Sent new XP leaderboard message for ${channel.guild.name}.`);
     }
     // Save state
     fs.writeFileSync(leaderboardStatePath, JSON.stringify(leaderboardState, null, 2));
