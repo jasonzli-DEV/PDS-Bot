@@ -54,6 +54,9 @@ module.exports = {
             }
 
             // Start transaction
+            if (!mongoose.connection.readyState) {
+                return interaction.editReply('Database connection not ready. Please try again.');
+            }
             const session = await mongoose.startSession();
             try {
                 await session.withTransaction(async () => {
