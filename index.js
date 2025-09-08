@@ -238,6 +238,10 @@ client.on('messageCreate', replyToHello);
 const afkListener = require('./events/messageCreate/afk-listener.js');
 client.on('messageCreate', afkListener);
 
+// Register level-xp event
+const levelXPListener = require('./events/messageCreate/level-xp.js');
+client.on('messageCreate', levelXPListener);
+
 // --- RAM Optimized Audio Playback Section WITH LOOPING ---
 
 /**
@@ -267,7 +271,7 @@ async function playAudio(connection) {
         const player = createAudioPlayer();
         player.play(resource);
         connection.subscribe(player);
-        
+
         console.log('🎵 Music playback started successfully!');
         setBotStatus('streaming'); // Set streaming status when music is playing
 
@@ -418,15 +422,13 @@ client.once(Events.ClientReady, async () => {
                             selfDeaf: false,
                             selfMute: false
                         });
-                        setBotStatus('streaming'); // Set streaming status when joining voice
                         await playAudio(newConnection);
                     } catch (reconnectError) {
                         console.error('❌ Failed to reconnect:', reconnectError);
                     }
                 }, 5000);
             });
-
-            setBotStatus('streaming'); // Set streaming status when joining voice
+           
         await playAudio(connection);
             console.log('✅ Successfully joined voice channel and started music');
     } catch (error) {
@@ -755,3 +757,91 @@ client.on(Events.InteractionCreate, async interaction => {
         process.exit(1);
     }
 })();
+
+const UserProfile = require('./schemas/UserProfile');
+const LevelProfile = require('./schemas/LevelProfile');
+const leaderboardStatePath = path.join(__dirname, 'leaderboard-messages.json');
+let leaderboardState = { rich: null, xp: null };
+try {
+    if (fs.existsSync(leaderboardStatePath)) {
+        leaderboardState = JSON.parse(fs.readFileSync(leaderboardStatePath, 'utf8'));
+    }
+} catch (e) { leaderboardState = { rich: null, xp: null }; }
+
+async function updateLeaderboards(client) {
+    const channelId = process.env.LEADERBOARD_CHANNEL_ID;
+    if (!channelId) {
+        console.log('[Leaderboard] LEADERBOARD_CHANNEL_ID not set.');
+        return;
+    }
+    const channel = await client.channels.fetch(channelId).catch((e) => {
+        console.log('[Leaderboard] Failed to fetch channel:', e);
+        return null;
+    });
+    if (!channel || !channel.isTextBased()) {
+        console.log('[Leaderboard] Channel not found or not text-based.');
+        return;
+    }
+
+    // Top 10 richest
+    const richest = await UserProfile.find({ balance: { $gt: 0 } }).sort({ balance: -1 }).limit(10);
+    let richDesc = richest.length ? richest.map((u, i) => `**${i+1}.** <@${u.userId}> — **${u.balance}** coins`).join('\n') : 'No data.';
+    const richEmbed = new EmbedBuilder()
+        .setTitle('🏆 Top 10 Richest')
+        .setDescription(richDesc)
+        .setColor('#FFD700')
+        .setTimestamp();
+
+    // Top 10 XP
+    const topXP = await LevelProfile.find({}).sort({ level: -1, xp: -1 }).limit(10);
+    let xpDesc = topXP.length ? topXP.map((u, i) => `**${i+1}.** <@${u.userId}> — Level **${u.level}** (${u.xp} XP)`).join('\n') : 'No data.';
+    const xpEmbed = new EmbedBuilder()
+        .setTitle('📈 Top 10 Most XP')
+        .setDescription(xpDesc)
+        .setColor('#5865F2')
+        .setTimestamp();
+
+    // Send or edit messages
+    // Richest
+    if (leaderboardState.rich) {
+        try {
+            const msg = await channel.messages.fetch(leaderboardState.rich);
+            await msg.edit({ embeds: [richEmbed] });
+            console.log('[Leaderboard] Edited richest leaderboard message.');
+        } catch (e) {
+            console.log('[Leaderboard] Failed to edit richest message, sending new one.', e);
+            const msg = await channel.send({ embeds: [richEmbed] });
+            leaderboardState.rich = msg.id;
+        }
+    } else {
+        const msg = await channel.send({ embeds: [richEmbed] });
+        leaderboardState.rich = msg.id;
+        console.log('[Leaderboard] Sent new richest leaderboard message.');
+    }
+    // XP
+    if (leaderboardState.xp) {
+        try {
+            const msg = await channel.messages.fetch(leaderboardState.xp);
+            await msg.edit({ embeds: [xpEmbed] });
+            console.log('[Leaderboard] Edited XP leaderboard message.');
+        } catch (e) {
+            console.log('[Leaderboard] Failed to edit XP message, sending new one.', e);
+            const msg = await channel.send({ embeds: [xpEmbed] });
+            leaderboardState.xp = msg.id;
+        }
+    } else {
+        const msg = await channel.send({ embeds: [xpEmbed] });
+        leaderboardState.xp = msg.id;
+        console.log('[Leaderboard] Sent new XP leaderboard message.');
+    }
+    // Save state
+    fs.writeFileSync(leaderboardStatePath, JSON.stringify(leaderboardState, null, 2));
+}
+
+// In ClientReady event, start interval and force update
+client.once(Events.ClientReady, async () => {
+    // ... existing code ...
+    setInterval(() => updateLeaderboards(client), 5 * 60 * 1000);
+    await updateLeaderboards(client); // Force update on startup
+    // ... existing code ...
+});
