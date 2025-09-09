@@ -768,108 +768,111 @@ client.on(Events.InteractionCreate, async interaction => {
 
 const UserProfile = require('./schemas/UserProfile');
 const LevelProfile = require('./schemas/LevelProfile');
-const leaderboardStatePath = path.join(__dirname, 'leaderboard-messages.json');
-let leaderboardState = {};
-try {
-    if (fs.existsSync(leaderboardStatePath)) {
-        leaderboardState = JSON.parse(fs.readFileSync(leaderboardStatePath, 'utf8'));
-    }
-} catch (e) { leaderboardState = {}; }
-
+const GuildSettings = require('./schemas/GuildSettings');
 async function updateLeaderboards(client) {
-    const channelId = process.env.LEADERBOARD_CHANNEL_ID;
-    if (!channelId) {
-        console.log('[Leaderboard] LEADERBOARD_CHANNEL_ID not set.');
-        return;
-    }
-    const channel = await client.channels.fetch(channelId).catch((e) => {
-        console.log('[Leaderboard] Failed to fetch channel:', e);
-        return null;
-    });
-    if (!channel || !channel.isTextBased()) {
-        console.log('[Leaderboard] Channel not found or not text-based.');
-        return;
-    }
-
-    const guildId = channel.guild.id;
-    if (!leaderboardState[guildId]) {
-        leaderboardState[guildId] = { rich: null, xp: null };
-    }
-
-    // Get all users in the guild (excluding bots)
-    const guildMembers = await channel.guild.members.fetch();
-    const allUserIds = guildMembers.filter(member => !member.user.bot).map(member => member.user.id);
-
-    // Create profiles for all users who don't have them
-    for (const userId of allUserIds) {
-        // Create UserProfile if doesn't exist
-        let userProfile = await UserProfile.findOne({ userId, guildId });
-        if (!userProfile) {
-            userProfile = new UserProfile({ userId, guildId, balance: 0 });
-            await userProfile.save();
+    try {
+        // Get all guilds that have leaderboard channels set
+        const guildSettings = await GuildSettings.find({ leaderboardChannelId: { $ne: null } });
+        
+        if (guildSettings.length === 0) {
+            console.log('[Leaderboard] No guilds have leaderboard channels configured.');
+            return;
         }
 
-        // Create LevelProfile if doesn't exist
-        let levelProfile = await LevelProfile.findOne({ userId, guildId });
-        if (!levelProfile) {
-            levelProfile = new LevelProfile({ userId, guildId, xp: 0, level: 1 });
-            await levelProfile.save();
-        }
-    }
+        for (const settings of guildSettings) {
+            const channel = await client.channels.fetch(settings.leaderboardChannelId).catch((e) => {
+                console.log(`[Leaderboard] Failed to fetch channel ${settings.leaderboardChannelId} for guild ${settings.guildId}:`, e);
+                return null;
+            });
+            
+            if (!channel || !channel.isTextBased()) {
+                console.log(`[Leaderboard] Channel ${settings.leaderboardChannelId} not found or not text-based for guild ${settings.guildId}.`);
+                continue;
+            }
 
-    // Top 10 richest for this guild (now all users have profiles)
-    const richest = await UserProfile.find({ guildId, userId: { $in: allUserIds } }).sort({ balance: -1, userId: 1 }).limit(10);
-    let richDesc = richest.length ? richest.map((u, i) => `**${i+1}.** <@${u.userId}> — **${u.balance}** coins`).join('\n') : 'No data.';
-    const richEmbed = new EmbedBuilder()
-        .setTitle(`🏆 Top 10 Richest - ${channel.guild.name}`)
-        .setDescription(richDesc)
-        .setColor('#FFD700')
-        .setTimestamp();
+            const guildId = settings.guildId;
 
-    // Top 10 XP for this guild (now all users have profiles)
-    const topXP = await LevelProfile.find({ guildId, userId: { $in: allUserIds } }).sort({ level: -1, xp: -1, userId: 1 }).limit(10);
-    let xpDesc = topXP.length ? topXP.map((u, i) => `**${i+1}.** <@${u.userId}> — Level **${u.level}** (${u.xp} XP)`).join('\n') : 'No data.';
-    const xpEmbed = new EmbedBuilder()
-        .setTitle(`📈 Top 10 Most XP - ${channel.guild.name}`)
-        .setDescription(xpDesc)
-        .setColor('#5865F2')
-        .setTimestamp();
+            // Get all users in the guild (excluding bots)
+            const guildMembers = await channel.guild.members.fetch();
+            const allUserIds = guildMembers.filter(member => !member.user.bot).map(member => member.user.id);
 
-    // Send or edit messages
-    // Richest
-    if (leaderboardState[guildId].rich) {
-        try {
-            const msg = await channel.messages.fetch(leaderboardState[guildId].rich);
-            await msg.edit({ embeds: [richEmbed] });
-            console.log(`[Leaderboard] Edited richest leaderboard message for ${channel.guild.name}.`);
-        } catch (e) {
-            console.log(`[Leaderboard] Failed to edit richest message for ${channel.guild.name}, sending new one.`, e);
-            const msg = await channel.send({ embeds: [richEmbed] });
-            leaderboardState[guildId].rich = msg.id;
+            // Create profiles for all users who don't have them
+            for (const userId of allUserIds) {
+                // Create UserProfile if doesn't exist
+                let userProfile = await UserProfile.findOne({ userId, guildId });
+                if (!userProfile) {
+                    userProfile = new UserProfile({ userId, guildId, balance: 0 });
+                    await userProfile.save();
+                }
+
+                // Create LevelProfile if doesn't exist
+                let levelProfile = await LevelProfile.findOne({ userId, guildId });
+                if (!levelProfile) {
+                    levelProfile = new LevelProfile({ userId, guildId, xp: 0, level: 1 });
+                    await levelProfile.save();
+                }
+            }
+
+            // Top 10 richest for this guild (now all users have profiles)
+            const richest = await UserProfile.find({ guildId, userId: { $in: allUserIds } }).sort({ balance: -1, userId: 1 }).limit(10);
+            let richDesc = richest.length ? richest.map((u, i) => `**${i+1}.** <@${u.userId}> — **${u.balance}** coins`).join('\n') : 'No data.';
+            const richEmbed = new EmbedBuilder()
+                .setTitle(`🏆 Top 10 Richest - ${channel.guild.name}`)
+                .setDescription(richDesc)
+                .setColor('#FFD700')
+                .setTimestamp();
+
+            // Top 10 XP for this guild (now all users have profiles)
+            const topXP = await LevelProfile.find({ guildId, userId: { $in: allUserIds } }).sort({ level: -1, xp: -1, userId: 1 }).limit(10);
+            let xpDesc = topXP.length ? topXP.map((u, i) => `**${i+1}.** <@${u.userId}> — Level **${u.level}** (${u.xp} XP)`).join('\n') : 'No data.';
+            const xpEmbed = new EmbedBuilder()
+                .setTitle(`📈 Top 10 Most XP - ${channel.guild.name}`)
+                .setDescription(xpDesc)
+                .setColor('#5865F2')
+                .setTimestamp();
+
+            // Send or edit messages
+            // Richest
+            if (settings.richMessageId) {
+                try {
+                    const msg = await channel.messages.fetch(settings.richMessageId);
+                    await msg.edit({ embeds: [richEmbed] });
+                    console.log(`[Leaderboard] Edited richest leaderboard message for ${channel.guild.name}.`);
+                } catch (e) {
+                    console.log(`[Leaderboard] Failed to edit richest message for ${channel.guild.name}, sending new one.`, e);
+                    const msg = await channel.send({ embeds: [richEmbed] });
+                    settings.richMessageId = msg.id;
+                    await settings.save();
+                }
+            } else {
+                const msg = await channel.send({ embeds: [richEmbed] });
+                settings.richMessageId = msg.id;
+                await settings.save();
+                console.log(`[Leaderboard] Sent new richest leaderboard message for ${channel.guild.name}.`);
+            }
+            
+            // XP
+            if (settings.xpMessageId) {
+                try {
+                    const msg = await channel.messages.fetch(settings.xpMessageId);
+                    await msg.edit({ embeds: [xpEmbed] });
+                    console.log(`[Leaderboard] Edited XP leaderboard message for ${channel.guild.name}.`);
+                } catch (e) {
+                    console.log(`[Leaderboard] Failed to edit XP message for ${channel.guild.name}, sending new one.`, e);
+                    const msg = await channel.send({ embeds: [xpEmbed] });
+                    settings.xpMessageId = msg.id;
+                    await settings.save();
+                }
+            } else {
+                const msg = await channel.send({ embeds: [xpEmbed] });
+                settings.xpMessageId = msg.id;
+                await settings.save();
+                console.log(`[Leaderboard] Sent new XP leaderboard message for ${channel.guild.name}.`);
+            }
         }
-    } else {
-        const msg = await channel.send({ embeds: [richEmbed] });
-        leaderboardState[guildId].rich = msg.id;
-        console.log(`[Leaderboard] Sent new richest leaderboard message for ${channel.guild.name}.`);
+    } catch (error) {
+        console.error('[Leaderboard] Error updating leaderboards:', error);
     }
-    // XP
-    if (leaderboardState[guildId].xp) {
-        try {
-            const msg = await channel.messages.fetch(leaderboardState[guildId].xp);
-            await msg.edit({ embeds: [xpEmbed] });
-            console.log(`[Leaderboard] Edited XP leaderboard message for ${channel.guild.name}.`);
-        } catch (e) {
-            console.log(`[Leaderboard] Failed to edit XP message for ${channel.guild.name}, sending new one.`, e);
-            const msg = await channel.send({ embeds: [xpEmbed] });
-            leaderboardState[guildId].xp = msg.id;
-        }
-    } else {
-        const msg = await channel.send({ embeds: [xpEmbed] });
-        leaderboardState[guildId].xp = msg.id;
-        console.log(`[Leaderboard] Sent new XP leaderboard message for ${channel.guild.name}.`);
-    }
-    // Save state
-    fs.writeFileSync(leaderboardStatePath, JSON.stringify(leaderboardState, null, 2));
 }
 
 // In ClientReady event, start interval and force update

@@ -46,8 +46,12 @@ module.exports = {
             .setRank(rank)
             .setStatus(user.presence?.status || 'online')
             .setProgressBar('#5865F2', 'COLOR')
-            .setUsername(user.username)
-            .setDiscriminator(user.discriminator);
+            .setUsername(user.username);
+        
+        // Only set discriminator if it's not #0 (unique username)
+        if (user.discriminator !== '0') {
+            card.setDiscriminator(user.discriminator);
+        }
 
         const data = await card.build();
         const attachment = new AttachmentBuilder(data, { name: 'rank.png' });
