@@ -835,43 +835,23 @@ async function updateLeaderboards(client) {
             .setColor('#5865F2')
             .setTimestamp();
 
-        // Send or edit messages
-        // Richest
-        if (guildSettings.richMessageId) {
+        // Send or edit message with both embeds
+        if (guildSettings.leaderboardMessageId) {
             try {
-                const msg = await channel.messages.fetch(guildSettings.richMessageId);
-                await msg.edit({ embeds: [richEmbed] });
-                console.log(`[Leaderboard] Edited richest leaderboard message for ${channel.guild.name}.`);
+                const msg = await channel.messages.fetch(guildSettings.leaderboardMessageId);
+                await msg.edit({ embeds: [richEmbed, xpEmbed] });
+                console.log(`[Leaderboard] Edited leaderboard message for ${channel.guild.name}.`);
             } catch (e) {
-                console.log(`[Leaderboard] Failed to edit richest message for ${channel.guild.name}, sending new one.`, e);
-                const msg = await channel.send({ embeds: [richEmbed] });
-                guildSettings.richMessageId = msg.id;
+                console.log(`[Leaderboard] Failed to edit leaderboard message for ${channel.guild.name}, sending new one.`, e);
+                const msg = await channel.send({ embeds: [richEmbed, xpEmbed] });
+                guildSettings.leaderboardMessageId = msg.id;
                 await guildSettings.save();
             }
         } else {
-            const msg = await channel.send({ embeds: [richEmbed] });
-            guildSettings.richMessageId = msg.id;
+            const msg = await channel.send({ embeds: [richEmbed, xpEmbed] });
+            guildSettings.leaderboardMessageId = msg.id;
             await guildSettings.save();
-            console.log(`[Leaderboard] Sent new richest leaderboard message for ${channel.guild.name}.`);
-        }
-        
-        // XP
-        if (guildSettings.xpMessageId) {
-            try {
-                const msg = await channel.messages.fetch(guildSettings.xpMessageId);
-                await msg.edit({ embeds: [xpEmbed] });
-                console.log(`[Leaderboard] Edited XP leaderboard message for ${channel.guild.name}.`);
-            } catch (e) {
-                console.log(`[Leaderboard] Failed to edit XP message for ${channel.guild.name}, sending new one.`, e);
-                const msg = await channel.send({ embeds: [xpEmbed] });
-                guildSettings.xpMessageId = msg.id;
-                await guildSettings.save();
-            }
-        } else {
-            const msg = await channel.send({ embeds: [xpEmbed] });
-            guildSettings.xpMessageId = msg.id;
-            await guildSettings.save();
-            console.log(`[Leaderboard] Sent new XP leaderboard message for ${channel.guild.name}.`);
+            console.log(`[Leaderboard] Sent new leaderboard message for ${channel.guild.name}.`);
         }
     } catch (error) {
         console.error('[Leaderboard] Error updating leaderboards:', error);
