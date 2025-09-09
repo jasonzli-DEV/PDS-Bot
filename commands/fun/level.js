@@ -24,6 +24,14 @@ module.exports = {
         const guildId = interaction.guildId;
         const userId = user.id;
 
+        // Check if user is a bot
+        if (user.bot) {
+            return interaction.reply({
+                content: '❌ Bots don\'t have levels!',
+                ephemeral: true
+            });
+        }
+
         // Fetch profile
         let profile = await LevelProfile.findOne({ userId, guildId });
         if (!profile) {
@@ -31,7 +39,7 @@ module.exports = {
             await profile.save();
         }
 
-        // Get rank (position in server)
+        // Get rank (position in server) - exclude bots from ranking
         const allProfiles = await LevelProfile.find({ guildId }).sort({ level: -1, xp: -1 });
         const rank = allProfiles.findIndex(p => p.userId === userId) + 1;
         const neededXP = getXPForLevel(profile.level);

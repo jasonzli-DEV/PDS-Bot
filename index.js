@@ -632,6 +632,9 @@ async function handleModalSubmit(interaction) {
         // Create challenge
         const { createChallenge } = require('./commands/fun/rps');
         await createChallenge(interaction, opponentId, betAmount);
+    } else if (customId.startsWith('purge_amount_modal_')) {
+        const { handleAmountSubmit } = require('./commands/mod/purge');
+        await handleAmountSubmit(interaction);
     }
 }
 
@@ -665,6 +668,9 @@ async function handleSelectMenu(interaction) {
         const challengeId = values[0];
         const { acceptChallenge } = require('./commands/fun/rps');
         await acceptChallenge(interaction, challengeId);
+    } else if (customId === 'purge_type_select') {
+        const { handleTypeSelect } = require('./commands/mod/purge');
+        await handleTypeSelect(interaction);
     }
 }
 
@@ -828,7 +834,29 @@ async function updateLeaderboards(client) {
 
         // Top 10 XP for this guild (now all users have profiles)
         const topXP = await LevelProfile.find({ guildId, userId: { $in: allUserIds } }).sort({ level: -1, xp: -1, userId: 1 }).limit(10);
-        let xpDesc = topXP.length ? topXP.map((u, i) => `**${i+1}.** <@${u.userId}> — Level **${u.level}** (${u.xp} XP)`).join('\n') : 'No data.';
+        
+        // Function to calculate total XP for a level
+        function getTotalXPForLevel(level, currentXP) {
+            let totalXP = currentXP;
+            for (let i = 1; i < level; i++) {
+                if (i === 1) {
+                    totalXP += 50; // Level 1 requires 50 XP
+                } else {
+                    let levelXP = 50;
+                    for (let j = 2; j <= i; j++) {
+                        levelXP = Math.round(levelXP * 1.5 / 50) * 50;
+                    }
+                    totalXP += levelXP;
+                }
+            }
+            return totalXP;
+        }
+        
+        let xpDesc = topXP.length ? topXP.map((u, i) => {
+            const totalXP = getTotalXPForLevel(u.level, u.xp);
+            return `**${i+1}.** <@${u.userId}> — Level **${u.level}** (${totalXP} total XP)`;
+        }).join('\n') : 'No data.';
+        
         const xpEmbed = new EmbedBuilder()
             .setTitle(`📈 Top 10 Most XP - ${channel.guild.name}`)
             .setDescription(xpDesc)
@@ -836,15 +864,11 @@ async function updateLeaderboards(client) {
             .setTimestamp();
 
         // Send or edit message with both embeds
-        console.log(`[Leaderboard] Processing leaderboard for ${channel.guild.name} - Message ID: ${guildSettings.leaderboardMessageId}`);
-        
         if (guildSettings.leaderboardMessageId) {
             try {
                 const msg = await channel.messages.fetch(guildSettings.leaderboardMessageId);
                 await msg.edit({ embeds: [richEmbed, xpEmbed] });
-                console.log(`[Leaderboard] Edited leaderboard message for ${channel.guild.name} with 2 embeds.`);
             } catch (e) {
-                console.log(`[Leaderboard] Failed to edit leaderboard message for ${channel.guild.name} (message not found), clearing old ID and sending new one.`, e);
                 // Clear the old message ID from database
                 guildSettings.leaderboardMessageId = null;
                 await guildSettings.save();
@@ -853,13 +877,11 @@ async function updateLeaderboards(client) {
                 const msg = await channel.send({ embeds: [richEmbed, xpEmbed] });
                 guildSettings.leaderboardMessageId = msg.id;
                 await guildSettings.save();
-                console.log(`[Leaderboard] Sent new leaderboard message for ${channel.guild.name} with 2 embeds.`);
             }
         } else {
             const msg = await channel.send({ embeds: [richEmbed, xpEmbed] });
             guildSettings.leaderboardMessageId = msg.id;
             await guildSettings.save();
-            console.log(`[Leaderboard] Sent new leaderboard message for ${channel.guild.name} with 2 embeds.`);
         }
     } catch (error) {
         console.error('[Leaderboard] Error updating leaderboards:', error);
@@ -878,6 +900,14 @@ client.once(Events.ClientReady, async () => {
     } else {
         console.log('[Leaderboard] LEADERBOARD_CHANNEL_ID not set in .env - skipping leaderboard updates.');
     }
+
+    // RAM logging every 30 minutes
+    setInterval(() => {
+        const used = process.memoryUsage();
+        const ramUsage = Math.round(used.heapUsed / 1024 / 1024 * 100) / 100;
+        const ramTotal = Math.round(used.heapTotal / 1024 / 1024 * 100) / 100;
+        console.log(`[RAM] Usage: ${ramUsage}MB / ${ramTotal}MB (${Math.round(ramUsage/ramTotal*100)}%)`);
+    }, 30 * 60 * 1000); // 30 minutes
     
     // ... existing code ...
 });
