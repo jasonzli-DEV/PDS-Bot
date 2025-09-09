@@ -831,6 +831,53 @@ async function handleAIChoice(interaction, gameId, choice) {
     
     await interaction.update({ embeds: [embed], components: [] });
     
+    // Handle tie - redo the round
+    if (result === 'tie') {
+        setTimeout(async () => {
+            const redoRoundEmbed = new EmbedBuilder()
+                .setTitle('🎮 Rock, Paper, Scissors vs AI')
+                .setDescription(
+                    `Round ${gameData.round}/3 (Redo)\n` +
+                    `💰 Bet: ${gameData.betAmount} coins\n\n` +
+                    `🤝 **It's a tie! Redoing this round...**\n\n` +
+                    `📊 **Current Score:**\n` +
+                    `You: ${gameData.playerWins} wins\n` +
+                    `AI: ${gameData.aiWins} wins\n\n` +
+                    `Choose your move!`
+                )
+                .setColor('#ffff00');
+            
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`rps_choice_${gameId}_rock`)
+                        .setLabel('🪨 Rock')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId(`rps_choice_${gameId}_paper`)
+                        .setLabel('📄 Paper')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId(`rps_choice_${gameId}_scissors`)
+                        .setLabel('✂️ Scissors')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId(`rps_forfeit_${gameId}`)
+                        .setLabel('🏳️ Forfeit')
+                        .setStyle(ButtonStyle.Danger)
+                );
+            
+            await interaction.followUp({
+                embeds: [redoRoundEmbed],
+                components: [row],
+                flags: 64
+            });
+            
+            startCountdown(interaction, gameId, 60);
+        }, 2000);
+        return; // Don't proceed to next round logic
+    }
+    
     if (gameData.round >= 3 || gameData.playerWins >= 2 || gameData.aiWins >= 2) {
         const finalResult = gameData.playerWins > gameData.aiWins ? 'player1' : 'player2';
         await endGame(interaction, gameId, finalResult, gameData);
