@@ -836,22 +836,30 @@ async function updateLeaderboards(client) {
             .setTimestamp();
 
         // Send or edit message with both embeds
+        console.log(`[Leaderboard] Processing leaderboard for ${channel.guild.name} - Message ID: ${guildSettings.leaderboardMessageId}`);
+        
         if (guildSettings.leaderboardMessageId) {
             try {
                 const msg = await channel.messages.fetch(guildSettings.leaderboardMessageId);
                 await msg.edit({ embeds: [richEmbed, xpEmbed] });
-                console.log(`[Leaderboard] Edited leaderboard message for ${channel.guild.name}.`);
+                console.log(`[Leaderboard] Edited leaderboard message for ${channel.guild.name} with 2 embeds.`);
             } catch (e) {
-                console.log(`[Leaderboard] Failed to edit leaderboard message for ${channel.guild.name}, sending new one.`, e);
+                console.log(`[Leaderboard] Failed to edit leaderboard message for ${channel.guild.name} (message not found), clearing old ID and sending new one.`, e);
+                // Clear the old message ID from database
+                guildSettings.leaderboardMessageId = null;
+                await guildSettings.save();
+                
+                // Send new message
                 const msg = await channel.send({ embeds: [richEmbed, xpEmbed] });
                 guildSettings.leaderboardMessageId = msg.id;
                 await guildSettings.save();
+                console.log(`[Leaderboard] Sent new leaderboard message for ${channel.guild.name} with 2 embeds.`);
             }
         } else {
             const msg = await channel.send({ embeds: [richEmbed, xpEmbed] });
             guildSettings.leaderboardMessageId = msg.id;
             await guildSettings.save();
-            console.log(`[Leaderboard] Sent new leaderboard message for ${channel.guild.name}.`);
+            console.log(`[Leaderboard] Sent new leaderboard message for ${channel.guild.name} with 2 embeds.`);
         }
     } catch (error) {
         console.error('[Leaderboard] Error updating leaderboards:', error);
@@ -861,7 +869,15 @@ async function updateLeaderboards(client) {
 // In ClientReady event, start interval and force update
 client.once(Events.ClientReady, async () => {
     // ... existing code ...
-    setInterval(() => updateLeaderboards(client), 60 * 1000);
-    await updateLeaderboards(client); // Force update on startup
+    
+    // Leaderboard update on startup and every minute
+    if (process.env.LEADERBOARD_CHANNEL_ID) {
+        await updateLeaderboards(client); // Initial update
+        setInterval(() => updateLeaderboards(client), 60 * 1000);
+        console.log('[Leaderboard] Leaderboard system initialized and will update every minute.');
+    } else {
+        console.log('[Leaderboard] LEADERBOARD_CHANNEL_ID not set in .env - skipping leaderboard updates.');
+    }
+    
     // ... existing code ...
 });
