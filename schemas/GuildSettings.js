@@ -9,6 +9,4 @@ const GuildSettingsSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 
-GuildSettingsSchema.index({ guildId: 1 }, { unique: true });
-
 module.exports = mongoose.model('GuildSettings', GuildSettingsSchema);
