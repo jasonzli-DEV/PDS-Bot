@@ -328,13 +328,7 @@ async function playAudio(connection) {
             }, 1000);
         });
 
-        // Optional: Log RAM usage periodically for debugging
-        if (!playAudio._memInterval) {
-            playAudio._memInterval = setInterval(() => {
-                const mem = process.memoryUsage();
-                console.log(`[MEMORY] RSS: ${(mem.rss / 1024 / 1024).toFixed(2)} MB, Heap: ${(mem.heapUsed / 1024 / 1024).toFixed(2)} MB`);
-            }, 60000);
-        }
+
     } catch (error) {
         console.error('Error in playAudio:', error);
         setTimeout(() => playAudio(connection), 1000);
@@ -890,7 +884,6 @@ async function updateLeaderboards(client) {
 
 // In ClientReady event, start interval and force update
 client.once(Events.ClientReady, async () => {
-    // ... existing code ...
     
     // Leaderboard update on startup and every minute
     if (process.env.LEADERBOARD_CHANNEL_ID) {
@@ -909,5 +902,4 @@ client.once(Events.ClientReady, async () => {
         console.log(`[RAM] Usage: ${ramUsage}MB / ${ramTotal}MB (${Math.round(ramUsage/ramTotal*100)}%)`);
     }, 30 * 60 * 1000); // 30 minutes
     
-    // ... existing code ...
 });
