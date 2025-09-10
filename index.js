@@ -898,7 +898,7 @@ client.once(Events.ClientReady, async () => {
     setInterval(() => {
         const used = process.memoryUsage();
         const ramUsage = Math.round(used.heapUsed / 1024 / 1024 * 100) / 100;
-        const ramTotal = Math.round(used.heapTotal / 1024 / 1024 * 100) / 100;
+        const ramTotal = 2048;
         console.log(`[RAM] Usage: ${ramUsage}MB / ${ramTotal}MB (${Math.round(ramUsage/ramTotal*100)}%)`);
     }, 30 * 60 * 1000); // 30 minutes
     
