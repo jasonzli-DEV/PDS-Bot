@@ -1,4 +1,6 @@
 node_modules/
+!node_modules/@discordjs/voice/
+!node_modules/@discordjs/voice/dist/
 !node_modules/@discordjs/voice/dist/index.js
 .env
 .DS_Store
