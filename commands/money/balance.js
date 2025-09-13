@@ -18,7 +18,7 @@ module.exports = {
         console.log(`[BALANCE] ${interaction.user.tag} checked balance: ${userProfile.balance} in ${interaction.guild.name}`);
         await interaction.reply({
             content: `💰 Your balance is: **${userProfile.balance}**`,
-            ephemeral: true
+            flags: 64
         });
     }
 };
