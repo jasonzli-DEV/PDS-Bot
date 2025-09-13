@@ -463,7 +463,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
 const UserProfile = require('./schemas/UserProfile');
 const LevelProfile = require('./schemas/LevelProfile');
-const GuildSettings = require('./schemas/GuildSettings');
+const { GuildSettings } = require('./schemas/GuildSettings');
 async function updateLeaderboards(client) {
     try {
         // Get all guilds and check their leaderboard channel settings
