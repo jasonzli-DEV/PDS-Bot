@@ -1,18 +1,4 @@
 require('dotenv').config();
-// Wrap global timers to clamp accidental negative durations and log the callsite
-const _originalSetTimeout = global.setTimeout;
-global.setTimeout = (fn, delay, ...args) => {
-    try {
-        if (typeof delay === 'number' && delay < 0) {
-            console.warn(`⚠️ Detected negative setTimeout delay: ${delay}. Clamping to 1ms.`);
-            console.warn(new Error('Negative setTimeout stack').stack);
-            delay = 1;
-        }
-    } catch (e) {
-        // ignore
-    }
-    return _originalSetTimeout(fn, delay, ...args);
-};
 const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Partials, Collection, ActivityType, PresenceUpdateStatus, Events, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
