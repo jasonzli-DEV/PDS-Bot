@@ -18,7 +18,7 @@ module.exports = {
                 return interaction.editReply('Could not fetch a cat image. Try again later!');
             }
             const embed = new EmbedBuilder()
-                .setTitle('🐱 Meow! Here is a random cat:')
+                .setTitle('🐱 Meow! Found one!')
                 .setImage(data[0].url)
                 .setColor('#f5c542');
             await interaction.editReply({ embeds: [embed] });
