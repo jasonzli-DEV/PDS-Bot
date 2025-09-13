@@ -10,6 +10,13 @@ module.exports = {
                 .setRequired(false)
         ),
     async execute(interaction) {
+            // Only allow this command in servers
+            if (!interaction.guild) {
+                return interaction.reply({
+                    content: '❌ This command can only be used in a server.',
+                    flags: 64
+                });
+            }
         const user = interaction.options.getUser('user') || interaction.user;
         const member = await interaction.guild.members.fetch(user.id);
         const embed = new EmbedBuilder()

@@ -28,6 +28,13 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers),
 
     async execute(interaction) {
+            // Only allow this command in servers
+            if (!interaction.guild) {
+                return interaction.reply({
+                    content: '❌ This command can only be used in a server.',
+                    flags: 64
+                });
+            }
         const targetUser = interaction.options.getUser('target');
         const reason = interaction.options.getString('reason') || 'No reason provided';
 

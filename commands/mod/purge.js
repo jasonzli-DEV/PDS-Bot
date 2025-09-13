@@ -7,6 +7,13 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
     
     async execute(interaction) {
+            // Only allow this command in servers
+            if (!interaction.guild) {
+                return interaction.reply({
+                    content: '❌ This command can only be used in a server.',
+                    flags: 64
+                });
+            }
         // Check if user has permission to manage messages
         if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
             return interaction.reply({

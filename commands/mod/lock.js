@@ -16,6 +16,13 @@ module.exports = {
         ),
     
     async execute(interaction) {
+            // Only allow this command in servers
+            if (!interaction.guild) {
+                return interaction.reply({
+                    content: '❌ This command can only be used in a server.',
+                    flags: 64
+                });
+            }
         // Check if user has moderator role
         const moderatorRoles = process.env.MODERATOR_ROLES?.split(',').map(role => role.trim()) || [];
         const hasModeratorRole = interaction.member.roles.cache.some(role => moderatorRoles.includes(role.id));

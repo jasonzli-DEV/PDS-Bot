@@ -53,6 +53,13 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
 
     async execute(interaction) {
+            // Only allow this command in servers
+            if (!interaction.guild) {
+                return interaction.reply({
+                    content: '❌ This command can only be used in a server.',
+                    flags: 64
+                });
+            }
         const subcommand = interaction.options.getSubcommand();
         const targetUser = interaction.options.getUser('target');
         const role = interaction.options.getRole('role');

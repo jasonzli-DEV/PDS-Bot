@@ -12,10 +12,10 @@ module.exports = {
         .setDescription('Beg to get some extra money.'),
 
     async execute(interaction) {
-        if (!interaction.inGuild()) {
+        if (!interaction.guild) {
             await interaction.reply({
-                content: "You can only run this command inside a server",
-                ephemeral: true,
+                content: '❌ This command can only be used in a server.',
+                flags: 64
             });
             return;
         }

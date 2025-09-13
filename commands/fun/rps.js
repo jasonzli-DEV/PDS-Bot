@@ -13,7 +13,7 @@ module.exports = {
             // Check if command is used in a server
             if (!interaction.guild) {
                 return interaction.reply({
-                    content: 'This command can only be used in servers!',
+                    content: '❌ This command can only be used in servers!',
                     flags: 64
                 });
             }

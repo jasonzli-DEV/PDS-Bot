@@ -22,6 +22,13 @@ module.exports = {
         ),
     
     async execute(interaction) {
+            // Only allow this command in servers
+            if (!interaction.guild) {
+                return interaction.reply({
+                    content: '❌ This command can only be used in a server.',
+                    flags: 64
+                });
+            }
         // Check for single role IDs from .env
         const ownerRoleId = process.env.OWNER_ROLE_ID;
         const managerRoleId = process.env.MANAGER_ROLE_ID;

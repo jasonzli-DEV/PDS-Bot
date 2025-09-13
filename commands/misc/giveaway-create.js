@@ -40,6 +40,13 @@ module.exports = {
                 .setRequired(true)
         ),
     async execute(interaction) {
+            // Only allow this command in servers
+            if (!interaction.guild) {
+                return interaction.reply({
+                    content: '❌ This command can only be used in a server.',
+                    flags: 64
+                });
+            }
         if (!hasModPerms(interaction.member)) {
             return interaction.reply({ content: '❌ You lack permission.', flags: 64 });
         }

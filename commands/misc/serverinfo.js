@@ -5,6 +5,13 @@ module.exports = {
         .setName('serverinfo')
         .setDescription('Displays information about this server.'),
     async execute(interaction) {
+            // Only allow this command in servers
+            if (!interaction.guild) {
+                return interaction.reply({
+                    content: '❌ This command can only be used in a server.',
+                    flags: 64
+                });
+            }
         const { guild } = interaction;
         await guild.fetch(); // Ensure up-to-date info
         const owner = await guild.fetchOwner();

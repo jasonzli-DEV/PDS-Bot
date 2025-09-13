@@ -12,6 +12,13 @@ module.exports = {
         ),
 
     async execute(interaction) {
+            // Only allow this command in servers
+            if (!interaction.guild) {
+                return interaction.reply({
+                    content: '❌ This command can only be used in a server.',
+                    flags: 64
+                });
+            }
         try {
             // Defer the reply immediately
             await interaction.deferReply({ flags: 64 });

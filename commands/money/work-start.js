@@ -6,6 +6,13 @@ module.exports = {
         .setName('work-start')
         .setDescription('Start working to earn money. Claim after 5 minutes!'),
     async execute(interaction) {
+        // Only allow this command in servers
+        if (!interaction.guild) {
+            return interaction.reply({
+                content: '❌ This command can only be used in a server.',
+                flags: 64
+            });
+        }
         const userId = interaction.user.id;
         const guildId = interaction.guild.id;
         let work = await Work.findOne({ userId, guildId });

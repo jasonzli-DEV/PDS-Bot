@@ -37,6 +37,13 @@ module.exports = {
                 .setDescription('Amount to gamble')
                 .setRequired(true)),
     async execute(interaction) {
+        // Only allow this command in servers
+        if (!interaction.guild) {
+            return interaction.reply({
+                content: '❌ This command can only be used in a server.',
+                flags: 64
+            });
+        }
     const amount = interaction.options.getInteger('amount');
     if (amount < 1) return interaction.reply({ content: 'Bet must be at least 1 coin.', flags: 64 });
 

@@ -20,6 +20,13 @@ module.exports = {
                 .setRequired(false)
         ),
     async execute(interaction) {
+            // Only allow this command in servers
+            if (!interaction.guild) {
+                return interaction.reply({
+                    content: '❌ This command can only be used in a server.',
+                    flags: 64
+                });
+            }
         const user = interaction.options.getUser('user') || interaction.user;
         const guildId = interaction.guildId;
         const userId = user.id;
