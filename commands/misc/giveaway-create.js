@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const ms = require('ms');
-const Giveaway = require('../schemas/Giveaway');
+const Giveaway = require('../../schemas/Giveaway');
 
 function hasModPerms(member) {
     const ownerRoleId = process.env.OWNER_ROLE_ID;
