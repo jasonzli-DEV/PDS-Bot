@@ -38,13 +38,13 @@ module.exports = {
         const targetLevel = getRoleLevel(target);
 
         if (executorLevel === 0) {
-            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+            return interaction.reply({ content: 'You do not have permission to use this command.', flags: 64 });
         }
         if (executorLevel <= targetLevel) {
-            return interaction.reply({ content: 'You can only ban users with a lower role than yourself.', ephemeral: true });
+            return interaction.reply({ content: 'You can only ban users with a lower role than yourself.', flags: 64 });
         }
         if (!target) {
-            return interaction.reply({ content: 'User not found in this server.', ephemeral: true });
+            return interaction.reply({ content: 'User not found in this server.', flags: 64 });
         }
 
         try {
@@ -56,7 +56,7 @@ module.exports = {
             await interaction.reply({ content: `✅ <@${targetUser.id}> has been banned.\nReason: ${reason}` });
         } catch (error) {
             console.error(`[BAN] Error banning ${targetUser.tag}:`, error);
-            await interaction.reply({ content: 'Failed to ban the user.', ephemeral: true });
+            await interaction.reply({ content: 'Failed to ban the user.', flags: 64 });
         }
     }
 };

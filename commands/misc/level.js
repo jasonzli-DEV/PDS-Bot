@@ -28,7 +28,7 @@ module.exports = {
         if (user.bot) {
             return interaction.reply({
                 content: '❌ Bots don\'t have levels!',
-                ephemeral: true
+                flags: 64
             });
         }
 

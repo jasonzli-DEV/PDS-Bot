@@ -41,12 +41,12 @@ module.exports = {
         ),
     async execute(interaction) {
         if (!hasModPerms(interaction.member)) {
-            return interaction.reply({ content: '❌ You lack permission.', ephemeral: true });
+            return interaction.reply({ content: '❌ You lack permission.', flags: 64 });
         }
 
         const channel = interaction.options.getChannel('channel');
         if (!channel.isTextBased()) {
-            return interaction.reply({ content: '❌ Please select a text channel for the giveaway.', ephemeral: true });
+            return interaction.reply({ content: '❌ Please select a text channel for the giveaway.', flags: 64 });
         }
         const winners = interaction.options.getInteger('winners');
         const durationStr = interaction.options.getString('duration');
@@ -54,7 +54,7 @@ module.exports = {
         const duration = ms(durationStr);
 
         if (!duration || duration < 10000) {
-            return interaction.reply({ content: '❌ Invalid duration. Use formats like `10m`, `1h`.', ephemeral: true });
+            return interaction.reply({ content: '❌ Invalid duration. Use formats like `10m`, `1h`.', flags: 64 });
         }
 
         const embed = new EmbedBuilder()
@@ -79,7 +79,7 @@ module.exports = {
             entries: []
         });
 
-        await interaction.reply({ content: `Giveaway created in ${channel} — [jump to message](${msg.url})`, ephemeral: true });
+    await interaction.reply({ content: `Giveaway created in ${channel} — [jump to message](${msg.url})`, flags: 64 });
 
     // For reliability, use a persistent scheduler in production
     const timeoutDelay = Math.max(0, duration);

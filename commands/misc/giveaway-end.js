@@ -24,22 +24,22 @@ module.exports = {
         ),
     async execute(interaction) {
         if (!hasModPerms(interaction.member)) {
-            return interaction.reply({ content: '❌ You lack permission.', ephemeral: true });
+            return interaction.reply({ content: '❌ You lack permission.', flags: 64 });
         }
 
         const msgIdOrLink = interaction.options.getString('message');
         const msgId = msgIdOrLink.match(/\d{17,}/)?.[0];
-        if (!msgId) return interaction.reply({ content: '❌ Invalid message ID or link.', ephemeral: true });
+    if (!msgId) return interaction.reply({ content: '❌ Invalid message ID or link.', flags: 64 });
 
         const giveaway = await Giveaway.findOne({ messageId: msgId });
-        if (!giveaway) return interaction.reply({ content: '❌ Giveaway not found.', ephemeral: true });
-        if (giveaway.ended) return interaction.reply({ content: '❌ Giveaway already ended.', ephemeral: true });
+    if (!giveaway) return interaction.reply({ content: '❌ Giveaway not found.', flags: 64 });
+    if (giveaway.ended) return interaction.reply({ content: '❌ Giveaway already ended.', flags: 64 });
 
         const channel = await interaction.client.channels.fetch(giveaway.channelId).catch(() => null);
-        if (!channel) return interaction.reply({ content: '❌ Could not fetch giveaway channel.', ephemeral: true });
+    if (!channel) return interaction.reply({ content: '❌ Could not fetch giveaway channel.', flags: 64 });
 
         const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
-        if (!message) return interaction.reply({ content: '❌ Could not fetch giveaway message.', ephemeral: true });
+    if (!message) return interaction.reply({ content: '❌ Could not fetch giveaway message.', flags: 64 });
 
         const reaction = message.reactions.cache.get('🎉');
         const users = reaction ? await reaction.users.fetch() : [];
@@ -66,6 +66,6 @@ module.exports = {
         giveaway.entries = entries;
         await giveaway.save();
 
-        return interaction.reply({ content: 'Giveaway ended.', ephemeral: true });
+    return interaction.reply({ content: 'Giveaway ended.', flags: 64 });
     }
 };

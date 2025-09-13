@@ -14,7 +14,7 @@ module.exports = {
     async execute(interaction) {
         try {
             // Defer the reply immediately
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: 64 });
 
             const userId = interaction.user.id;
             const guildId = interaction.guild.id;
@@ -55,12 +55,12 @@ module.exports = {
             if (!interaction.replied) {
                 await interaction.reply({
                     content: 'Failed to set AFK status.',
-                    ephemeral: true
+                    flags: 64
                 });
             } else {
                 await interaction.followUp({
                     content: 'Failed to set AFK status.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
         }

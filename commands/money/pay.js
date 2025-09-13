@@ -18,13 +18,13 @@ module.exports = {
     const amount = interaction.options.getInteger('amount');
 
     if (targetUser.bot) {
-      return interaction.reply({ content: "You can't pay bots.", ephemeral: true });
+  return interaction.reply({ content: "You can't pay bots.", flags: 64 });
     }
     if (targetUser.id === payerId) {
-      return interaction.reply({ content: "You can't pay yourself.", ephemeral: true });
+  return interaction.reply({ content: "You can't pay yourself.", flags: 64 });
     }
     if (amount <= 0) {
-      return interaction.reply({ content: "Amount must be positive.", ephemeral: true });
+  return interaction.reply({ content: "Amount must be positive.", flags: 64 });
     }
 
     const session = await mongoose.startSession();
@@ -35,11 +35,11 @@ module.exports = {
 
       if (!payer || payer.coins < amount) {
         await session.abortTransaction();
-        return interaction.reply({ content: "You don't have enough coins.", ephemeral: true });
+  return interaction.reply({ content: "You don't have enough coins.", flags: 64 });
       }
       if (!payee) {
         await session.abortTransaction();
-        return interaction.reply({ content: "Target user does not have a profile.", ephemeral: true });
+  return interaction.reply({ content: "Target user does not have a profile.", flags: 64 });
       }
 
       payer.coins -= amount;
@@ -54,7 +54,7 @@ module.exports = {
       } catch (dmErr) {
         console.info('[PAY] Could not DM recipient (privacy settings).');
       }
-      return interaction.reply({ content: `You paid ${targetUser.username} ${amount} coins!`, ephemeral: false });
+  return interaction.reply({ content: `You paid ${targetUser.username} ${amount} coins!`, flags: 64 });
     } catch (err) {
       await session.abortTransaction();
       console.error('Pay command error:', err);

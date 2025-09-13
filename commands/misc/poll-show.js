@@ -27,9 +27,9 @@ module.exports = {
         } else {
             msgId = messageOrId.match(/\d{17,}/)?.[0];
         }
-        if (!msgId || !channel) return interaction.reply({ content: '❌ Invalid message ID or link.', ephemeral: true });
+    if (!msgId || !channel) return interaction.reply({ content: '❌ Invalid message ID or link.', flags: 64 });
         const pollMsg = await channel.messages.fetch(msgId).catch(() => null);
-        if (!pollMsg) return interaction.reply({ content: '❌ Poll message not found.', ephemeral: true });
+    if (!pollMsg) return interaction.reply({ content: '❌ Poll message not found.', flags: 64 });
         const results = [];
         for (let i = 0; i < POLL_EMOJIS.length; i++) {
             const emoji = POLL_EMOJIS[i];

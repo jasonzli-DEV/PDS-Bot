@@ -29,7 +29,7 @@ module.exports = {
         ),
     async execute(interaction) {
         if (!hasModPerms(interaction.member)) {
-            return interaction.reply({ content: '❌ You lack permission.', ephemeral: true });
+            return interaction.reply({ content: '❌ You lack permission.', flags: 64 });
         }
 
         let msgIdOrLink = interaction.options.getString('message');
@@ -39,19 +39,19 @@ module.exports = {
 
         if (msgIdOrLink) {
             const msgId = msgIdOrLink.match(/\d{17,}/)?.[0];
-            if (!msgId) return interaction.reply({ content: '❌ Invalid message ID or link.', ephemeral: true });
+            if (!msgId) return interaction.reply({ content: '❌ Invalid message ID or link.', flags: 64 });
             // Try to find by giveaway messageId first
             giveaway = await Giveaway.findOne({ messageId: msgId, ended: true });
             if (!giveaway) {
                 // Try to find by result message: find the giveaway with the closest endTime before this message
                 rerollMessageId = msgId;
                 giveaway = await Giveaway.findOne({ guildId: interaction.guild.id, ended: true }).sort({ endTime: -1 });
-                if (!giveaway) return interaction.reply({ content: '❌ Giveaway not found or not ended.', ephemeral: true });
+                if (!giveaway) return interaction.reply({ content: '❌ Giveaway not found or not ended.', flags: 64 });
             }
         } else {
             // Find latest ended giveaway in this guild
             giveaway = await Giveaway.findOne({ guildId: interaction.guild.id, ended: true }).sort({ endTime: -1 });
-            if (!giveaway) return interaction.reply({ content: '❌ No ended giveaways found in this server.', ephemeral: true });
+            if (!giveaway) return interaction.reply({ content: '❌ No ended giveaways found in this server.', flags: 64 });
         }
 
         let entries = giveaway.entries || [];
@@ -68,7 +68,7 @@ module.exports = {
 
         // Remove the previous winner if provided, but only for selection (not from entries)
         let previousWinnerId = winnerToReroll ? winnerToReroll.id : null;
-        if (entries.length === 0) return interaction.reply({ content: '❌ No valid entries to reroll.', ephemeral: true });
+    if (entries.length === 0) return interaction.reply({ content: '❌ No valid entries to reroll.', flags: 64 });
 
         // Pick a new winner that is different from previousWinnerId if possible
         let newWinnerId = null;
@@ -82,7 +82,7 @@ module.exports = {
         }
 
         const channel = await interaction.client.channels.fetch(giveaway.channelId).catch(() => null);
-        if (!channel) return interaction.reply({ content: '❌ Could not fetch giveaway channel.', ephemeral: true });
+    if (!channel) return interaction.reply({ content: '❌ Could not fetch giveaway channel.', flags: 64 });
 
         // Use the original giveaway message or the result message if provided
         let message;
@@ -91,7 +91,7 @@ module.exports = {
         } else {
             message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
         }
-        if (!message) return interaction.reply({ content: '❌ Could not fetch giveaway/result message.', ephemeral: true });
+    if (!message) return interaction.reply({ content: '❌ Could not fetch giveaway/result message.', flags: 64 });
 
         const embed = new EmbedBuilder()
             .setTitle(`🎉 Giveaway Reroll: ${giveaway.name}`)
@@ -101,6 +101,6 @@ module.exports = {
             .setTimestamp();
 
         await message.reply({ embeds: [embed] });
-        return interaction.reply({ content: `Rerolled! New winner: <@${newWinnerId}>`, ephemeral: true });
+    return interaction.reply({ content: `Rerolled! New winner: <@${newWinnerId}>`, flags: 64 });
     }
 };

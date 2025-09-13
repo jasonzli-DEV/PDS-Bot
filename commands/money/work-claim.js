@@ -12,7 +12,7 @@ module.exports = {
         let work = await Work.findOne({ userId, guildId });
 
         if (!work) {
-            return interaction.reply({ content: 'You have not started working yet. Use `/work-start` first!', ephemeral: true });
+            return interaction.reply({ content: 'You have not started working yet. Use `/work-start` first!', flags: 64 });
         }
 
         const now = new Date();
@@ -20,12 +20,12 @@ module.exports = {
         if (work.nextClaim < now && (!work.expiresAt || work.expiresAt < now)) {
             await Work.deleteOne({ _id: work._id });
             console.log(`[WORK-CLAIM] ${interaction.user.tag} tried to claim expired work in ${interaction.guild.name}`);
-            return interaction.reply({ content: 'Your work session expired! Please use `/work-start` again.', ephemeral: true });
+            return interaction.reply({ content: 'Your work session expired! Please use `/work-start` again.', flags: 64 });
         }
 
         if (now < work.nextClaim) {
             const remaining = Math.ceil((work.nextClaim - now) / 1000);
-            return interaction.reply({ content: `You need to wait ${Math.ceil(remaining/60)} more minutes to claim your reward.`, ephemeral: true });
+            return interaction.reply({ content: `You need to wait ${Math.ceil(remaining/60)} more minutes to claim your reward.`, flags: 64 });
         }
 
         let userProfile = await UserProfile.findOne({ userId, guildId });
@@ -41,6 +41,6 @@ module.exports = {
         await Promise.all([userProfile.save(), work.save()]);
 
         console.log(`[WORK-CLAIM] ${interaction.user.tag} claimed work reward of ${work.reward - 500} in ${interaction.guild.name}. New balance: ${userProfile.balance}`);
-        await interaction.reply({ content: `You claimed ${work.reward - 500}! Your new balance is ${userProfile.balance}. Next time you work, you'll earn ${work.reward}.`, ephemeral: true });
+    await interaction.reply({ content: `You claimed ${work.reward - 500}! Your new balance is ${userProfile.balance}. Next time you work, you'll earn ${work.reward}.`, flags: 64 });
     }
 };

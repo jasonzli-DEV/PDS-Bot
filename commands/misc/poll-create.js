@@ -71,7 +71,7 @@ module.exports = {
             if (choice) choices.push(choice);
         }
         if (choices.length < 2) {
-            return interaction.reply({ content: '❌ Poll must have at least 2 choices.', ephemeral: true });
+            return interaction.reply({ content: '❌ Poll must have at least 2 choices.', flags: 64 });
         }
         let desc = '';
         for (let i = 0; i < choices.length; i++) {
@@ -86,6 +86,6 @@ module.exports = {
         for (let i = 0; i < choices.length; i++) {
             await pollMsg.react(POLL_EMOJIS[i]);
         }
-        await interaction.reply({ content: `Poll created! [Jump to poll](${pollMsg.url})`, ephemeral: true });
+    await interaction.reply({ content: `Poll created! [Jump to poll](${pollMsg.url})`, flags: 64 });
     }
 };

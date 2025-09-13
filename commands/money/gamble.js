@@ -25,7 +25,7 @@ module.exports = {
         if (userProfile.balance < betAmount) {
             return interaction.reply({
                 content: `❌ You don't have enough coins! Your balance: **${userProfile.balance}** coins.`,
-                ephemeral: true
+                flags: 64
             });
         }
 

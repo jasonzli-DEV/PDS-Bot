@@ -23,21 +23,21 @@ module.exports = {
         if (!hasOwnerRole && !hasManagerRole && !hasModeratorRole && !interaction.member.permissions.has(PermissionFlagsBits.MuteMembers)) {
             return interaction.reply({
                 content: '❌ You need a moderator, manager, or owner role or "Mute Members" permission to use this command.',
-                ephemeral: true
+                flags: 64
             });
         }
 
         const targetUser = interaction.options.getUser('user');
         if (!targetUser) {
-            return interaction.reply({ content: 'User not found.', ephemeral: true });
+            return interaction.reply({ content: 'User not found.', flags: 64 });
         }
         // Prevent unmuting bots
         if (targetUser.bot) {
-            return interaction.reply({ content: '❌ You cannot unmute bots.', ephemeral: true });
+            return interaction.reply({ content: '❌ You cannot unmute bots.', flags: 64 });
         }
         // Prevent unmuting yourself
         if (targetUser.id === interaction.user.id) {
-            return interaction.reply({ content: '❌ You cannot unmute yourself.', ephemeral: true });
+            return interaction.reply({ content: '❌ You cannot unmute yourself.', flags: 64 });
         }
         // Prevent unmuting the server owner
         if (targetUser.id === interaction.guild.ownerId) {

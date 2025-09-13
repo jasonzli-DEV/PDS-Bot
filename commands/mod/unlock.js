@@ -23,7 +23,7 @@ module.exports = {
         if (!hasModeratorRole && !interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
             return interaction.reply({
                 content: '❌ You need a moderator role or "Manage Channels" permission to use this command.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -34,7 +34,7 @@ module.exports = {
         if (!targetChannel.isTextBased()) {
             return interaction.reply({
                 content: '❌ You can only unlock text channels.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -47,7 +47,7 @@ module.exports = {
             if (!currentPermissions || !currentPermissions.deny.has(PermissionFlagsBits.SendMessages)) {
                 return interaction.reply({
                     content: '❌ This channel is not locked.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
 
@@ -85,7 +85,7 @@ module.exports = {
             console.error('Error unlocking channel:', error);
             await interaction.reply({
                 content: '❌ An error occurred while unlocking the channel. Please check my permissions.',
-                ephemeral: true
+                flags: 64
             });
         }
     },
