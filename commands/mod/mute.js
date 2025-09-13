@@ -29,19 +29,19 @@ module.exports = {
                     flags: 64
                 });
             }
-        // Check for single role IDs from .env
-        const ownerRoleId = process.env.OWNER_ROLE_ID;
-        const managerRoleId = process.env.MANAGER_ROLE_ID;
-        const moderatorRoleId = process.env.MODERATOR_ROLE_ID;
-        const memberRoles = interaction.member.roles.cache;
-        const hasOwnerRole = ownerRoleId && memberRoles.has(ownerRoleId);
-        const hasManagerRole = managerRoleId && memberRoles.has(managerRoleId);
-        const hasModeratorRole = moderatorRoleId && memberRoles.has(moderatorRoleId);
+
+    const { getGuildSettings } = require('../../schemas/GuildSettings');
+    const guildId = interaction.guild.id;
+    const settings = await getGuildSettings(guildId);
+    const memberRoles = interaction.member.roles.cache;
+    const hasOwnerRole = settings.ownerRoleId && memberRoles.has(settings.ownerRoleId);
+    const hasManagerRole = settings.managerRoleId && memberRoles.has(settings.managerRoleId);
+    const hasModeratorRole = settings.moderatorRoleId && memberRoles.has(settings.moderatorRoleId);
         
         if (!hasOwnerRole && !hasManagerRole && !hasModeratorRole && !interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
             return interaction.reply({
                 content: '❌ You need a moderator, manager, or owner role or "Moderate Members" permission to use this command.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -53,7 +53,7 @@ module.exports = {
         if (targetUser.bot) {
             return interaction.reply({
                 content: '❌ You cannot mute bots.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -61,7 +61,7 @@ module.exports = {
         if (targetUser.id === interaction.user.id) {
             return interaction.reply({
                 content: '❌ You cannot mute yourself.',
-                ephemeral: true
+                flags: 64
             });
         }
 
@@ -69,35 +69,35 @@ module.exports = {
         if (targetUser.id === interaction.guild.ownerId) {
             return interaction.reply({
                 content: '❌ You cannot mute the server owner.',
-                ephemeral: true
+                flags: 64
             });
         }
 
         try {
             const member = await interaction.guild.members.fetch(targetUser.id);
             // --- Role-based mute restrictions ---
-            const targetHasOwnerRole = ownerRoleId && member.roles.cache.has(ownerRoleId);
-            const targetHasManagerRole = managerRoleId && member.roles.cache.has(managerRoleId);
-            const targetHasModeratorRole = moderatorRoleId && member.roles.cache.has(moderatorRoleId);
+            const targetHasOwnerRole = settings.ownerRoleId && member.roles.cache.has(settings.ownerRoleId);
+            const targetHasManagerRole = settings.managerRoleId && member.roles.cache.has(settings.managerRoleId);
+            const targetHasModeratorRole = settings.moderatorRoleId && member.roles.cache.has(settings.moderatorRoleId);
             // Prevent muting the owner
             if (targetHasOwnerRole) {
                 return interaction.reply({
                     content: '❌ You cannot mute the server owner.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
             // Moderator cannot mute manager or moderator
             if (hasModeratorRole && !hasManagerRole && !hasOwnerRole && (targetHasManagerRole || targetHasModeratorRole)) {
                 return interaction.reply({
                     content: '❌ Moderators can only mute regular users.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
             // Manager cannot mute owner or manager
             if (hasManagerRole && !hasOwnerRole && (targetHasOwnerRole || targetHasManagerRole)) {
                 return interaction.reply({
                     content: '❌ Managers can only mute moderators and regular users.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
             // Only owner can mute managers or moderators
@@ -107,7 +107,7 @@ module.exports = {
             if (member.roles.highest.position >= interaction.member.roles.highest.position) {
                 return interaction.reply({
                     content: '❌ You cannot mute someone with equal or higher roles.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
 
@@ -115,7 +115,7 @@ module.exports = {
             if (member.isCommunicationDisabled()) {
                 return interaction.reply({
                     content: '❌ This user is already muted.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
 
@@ -146,7 +146,7 @@ module.exports = {
             console.error('Error muting user:', error);
             await interaction.reply({
                 content: '❌ An error occurred while muting the user. Please check my permissions.',
-                ephemeral: true
+                flags: 64
             });
         }
     },

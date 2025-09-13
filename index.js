@@ -2,14 +2,27 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Partials, Collection, ActivityType, PresenceUpdateStatus, Events, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, StreamType, getVoiceConnections } = require('@discordjs/voice');
-const sodium = require('libsodium-wrappers');
 const mongoose = require('mongoose');
-const ffmpeg = require('ffmpeg-static');
-const { spawn } = require('child_process');
+const { connectToVoiceChannel } = require('./music/musicPlayer');
 
-// Map of active voice connections and their resources
-const activeConnections = new Map();
+// Path to commands directory
+const commandsPath = path.join(__dirname, 'commands');
+
+// Utility to recursively get all .js command files from a directory
+function getAllCommandFiles(dir) {
+    const results = [];
+    const list = fs.readdirSync(dir);
+    list.forEach(file => {
+        const filePath = path.join(dir, file);
+        const stat = fs.statSync(filePath);
+        if (stat && stat.isDirectory()) {
+            results.push(...getAllCommandFiles(filePath));
+        } else if (file.endsWith('.js')) {
+            results.push(filePath);
+        }
+    });
+    return results;
+}
 
 // Flag controlling whether status uses environment config or rotates dynamically
 let useEnvStatus = process.env.USE_ENV_STATUS !== 'false';
@@ -116,71 +129,11 @@ function setBotStatus(statusKey = 'online', useEnv = false) {
 function toggleStatusMode() {
     useEnvStatus = !useEnvStatus;
     console.log(`🔄 Status mode switched to: ${useEnvStatus ? 'Environment Variables' : 'Dynamic Rotation'}`);
-    setBotStatus('online', useEnvStatus);
+    // Only call setBotStatus from outside this function to avoid recursion
     return useEnvStatus;
 }
 
-// Force update presence from environment variables
-function updateStatusFromEnv() {
-    setBotStatus('online', true);
-}
-
-// Stop and cleanup audio player and related streams
-function cleanupAudio(player, streams = []) {
-    try {
-        if (player) {
-            player.stop();
-            player.removeAllListeners();
-        }
-        streams.forEach(stream => {
-            if (stream) {
-                if (typeof stream.destroy === 'function') stream.destroy();
-                if (typeof stream.unpipe === 'function') stream.unpipe();
-                if (typeof stream.end === 'function') stream.end();
-                if (typeof stream.kill === 'function') stream.kill();
-            }
-        });
-        if (global.gc) global.gc();
-    } catch (error) {
-        console.error('Cleanup error:', error);
-    }
-}
-
-
-// Gracefully shut down audio, DB, and client connections
-async function handleShutdown() {
-    console.log('Shutting down...');
-    try {
-        for (const [guildId, { player, streams }] of activeConnections.entries()) {
-            cleanupAudio(player, streams);
-            activeConnections.delete(guildId);
-        }
-        const connections = getVoiceConnections();
-        connections.forEach(connection => {
-            connection.destroy();
-        });
-        try { await mongoose.connection.close(); } catch {}
-        try { await client.destroy(); } catch {}
-        process.exit(0);
-    } catch (error) {
-        console.error('Error during shutdown:', error);
-        process.exit(1);
-    }
-}
-process.on('SIGINT', handleShutdown);
-process.on('SIGTERM', handleShutdown);
-
-// Load command modules from `commands` directory
-const commandsPath = path.join(__dirname, 'commands');
-function getAllCommandFiles(dir, files = []) {
-    if (!fs.existsSync(dir)) return files;
-    for (const file of fs.readdirSync(dir)) {
-        const fullPath = path.join(dir, file);
-        if (fs.statSync(fullPath).isDirectory()) getAllCommandFiles(fullPath, files);
-        else if (file.endsWith('.js')) files.push(fullPath);
-    }
-    return files;
-}
+// Load command files
 const commandFiles = getAllCommandFiles(commandsPath);
 const commands = [];
 const clientCommands = new Collection();
@@ -244,97 +197,6 @@ client.on('messageCreate', levelXPListener);
 
 // --- RAM Optimized Audio Playback Section WITH LOOPING ---
 
-/**
- * Play audio in a RAM-efficient way, with looping support
- */
-async function playAudio(connection) {
-    try {
-        await sodium.ready;
-        // Always convert to Discord-compatible PCM using ffmpeg
-        const inputPath = path.join(__dirname, 'music.opus');
-        const ffmpegProcess = spawn(ffmpeg, [
-            '-i', inputPath,
-            '-analyzeduration', '0',
-            '-loglevel', '0',
-            '-f', 's16le',
-            '-ar', '48000',
-            '-ac', '2',
-            'pipe:1'
-        ], { stdio: ['ignore', 'pipe', 'ignore'] });
-
-        const resource = createAudioResource(ffmpegProcess.stdout, {
-            inputType: StreamType.Raw,
-            inlineVolume: true
-        });
-        resource.volume?.setVolume(1);
-
-        const player = createAudioPlayer();
-        player.play(resource);
-        connection.subscribe(player);
-
-        console.log('🎵 Music playback started successfully!');
-
-        // Remove any previous listeners to avoid duplicate handlers
-        player.removeAllListeners('stateChange');
-        player.on('stateChange', (oldState, newState) => {
-            if (newState.status === 'idle') {
-                console.log('🎵 Music track ended, restarting loop...');
-                cleanupAudio(player, [ffmpegProcess]);
-                ffmpegProcess.kill();
-                setTimeout(() => {
-                    if (connection.state.status !== 'destroyed') {
-                        console.log('🔄 Restarting music playback...');
-                        playAudio(connection).catch(console.error);
-                    } else {
-                        console.log('Voice connection destroyed, not restarting music.');
-                    }
-                }, 250);
-            }
-        });
-
-        player.once('error', error => {
-            console.error('🎵 Player error:', error);
-            cleanupAudio(player, [ffmpegProcess]);
-            ffmpegProcess.kill();
-            setTimeout(() => {
-                if (connection.state.status !== 'destroyed') {
-                    console.log('🔄 Restarting music after player error...');
-                    playAudio(connection).catch(console.error);
-                }
-            }, 1000);
-        });
-
-        ffmpegProcess.stdout.once('error', error => {
-            console.error('🎵 FFmpeg stream error:', error);
-            player.stop();
-            cleanupAudio(player, [ffmpegProcess]);
-            ffmpegProcess.kill();
-            setTimeout(() => {
-                if (connection.state.status !== 'destroyed') {
-                    console.log('🔄 Restarting music after stream error...');
-                    playAudio(connection).catch(console.error);
-                }
-            }, 1000);
-        });
-
-        ffmpegProcess.on('error', error => {
-            console.error('🎵 FFmpeg process error:', error);
-            cleanupAudio(player, [ffmpegProcess]);
-            setTimeout(() => {
-                if (connection.state.status !== 'destroyed') {
-                    console.log('🔄 Restarting music after process error...');
-                    playAudio(connection).catch(console.error);
-                }
-            }, 1000);
-        });
-
-
-    } catch (error) {
-        console.error('Error in playAudio:', error);
-        setTimeout(() => playAudio(connection), 1000);
-    }
-}
-
 // On ready
 client.once(Events.ClientReady, async () => {
     console.log(`✅ Bot is ready! Logged in as ${client.user.tag}`);
@@ -359,87 +221,23 @@ client.once(Events.ClientReady, async () => {
     // Set initial bot status from environment variables
     setBotStatus('online', true);
     
-    // Bot status only uses .env values, no rotation
-
-    // Voice channel connection (optional - only if VOICE_CHANNEL_ID is set)
+    // Global voice channel connection (if VOICE_CHANNEL_ID is set in .env)
     if (process.env.VOICE_CHANNEL_ID) {
-        console.log('🎵 Attempting to join voice channel...');
-    try {
-        const channel = await client.channels.fetch(process.env.VOICE_CHANNEL_ID);
-        if (!channel) {
-                console.warn('⚠️ Could not find voice channel! Check VOICE_CHANNEL_ID in .env');
-                return;
-            }
-            
-            if (channel.type !== 2) { // 2 = GUILD_VOICE
-                console.warn('⚠️ Channel is not a voice channel! Check VOICE_CHANNEL_ID in .env');
-            return;
-        }
-
-        const connection = joinVoiceChannel({
-            channelId: channel.id,
-            guildId: channel.guild.id,
-            adapterCreator: channel.guild.voiceAdapterCreator,
-            selfDeaf: false,
-            selfMute: false
-        });
-
-        connection.on('error', error => {
-                console.error('🎵 Voice connection error:', error);
-                const activeConnection = activeConnections.get(connection.joinConfig.guildId);
-                if (activeConnection) {
-                    cleanupAudio(activeConnection.player, activeConnection.streams);
-            activeConnections.delete(connection.joinConfig.guildId);
-                }
-                // Attempt to reconnect after a delay
-                setTimeout(async () => {
-                    try {
-                        console.log('🔄 Attempting to reconnect to voice channel...');
-                        const newConnection = joinVoiceChannel({
-                            channelId: channel.id,
-                            guildId: channel.guild.id,
-                            adapterCreator: channel.guild.voiceAdapterCreator,
-                            selfDeaf: false,
-                            selfMute: false
-                        });
-                        await playAudio(newConnection);
-                    } catch (reconnectError) {
-                        console.error('❌ Failed to reconnect:', reconnectError);
-                    }
-                }, 5000);
-            });
-
-        // Auto-reconnect on disconnect
-        connection.on('stateChange', (oldState, newState) => {
-            if (newState.status === 'disconnected') {
-                console.log('🎵 Voice connection disconnected, attempting to reconnect...');
-                setTimeout(async () => {
-                    try {
-                        const newConnection = joinVoiceChannel({
-                            channelId: channel.id,
-                            guildId: channel.guild.id,
-                            adapterCreator: channel.guild.voiceAdapterCreator,
-                            selfDeaf: false,
-                            selfMute: false
-                        });
-                        await playAudio(newConnection);
-                        console.log('✅ Successfully reconnected to voice channel');
-                    } catch (reconnectError) {
-                        console.error('❌ Failed to reconnect after disconnect:', reconnectError);
-                    }
-                }, 3000);
-            }
-        });
-           
-        await playAudio(connection);
-            console.log('✅ Successfully joined voice channel and started music');
-    } catch (error) {
-            console.error('❌ Error joining voice channel:', error);
-            console.log('ℹ️ Bot will continue without voice functionality');
-        }
+        console.log('🎵 Attempting to join global voice channel...');
+        await connectToVoiceChannel(client, process.env.VOICE_CHANNEL_ID);
     } else {
         console.log('ℹ️ No VOICE_CHANNEL_ID set in .env - skipping voice connection');
+        // Show ready message immediately if no voice channel is configured
+        setTimeout(() => {
+            if (!global.botStartupComplete) {
+                console.log('bun-app-started');
+                console.log('🚀 Bot is fully ready and operational!');
+                global.botStartupComplete = true;
+            }
+        }, 1000);
     }
+    
+    // Bot status only uses .env values, no rotation
 });
 
 // Error handling
@@ -668,132 +466,131 @@ const LevelProfile = require('./schemas/LevelProfile');
 const GuildSettings = require('./schemas/GuildSettings');
 async function updateLeaderboards(client) {
     try {
-        const channelId = process.env.LEADERBOARD_CHANNEL_ID;
-        if (!channelId) {
-            console.log('[Leaderboard] LEADERBOARD_CHANNEL_ID not set in .env.');
-            return;
-        }
-
-        const channel = await client.channels.fetch(channelId).catch((e) => {
-            console.log('[Leaderboard] Failed to fetch channel:', e);
-            return null;
-        });
-        
-        if (!channel || !channel.isTextBased()) {
-            console.log('[Leaderboard] Channel not found or not text-based.');
-            return;
-        }
-
-        const guildId = channel.guild.id;
-        
-        // Get or create guild settings for message IDs
-        let guildSettings = await GuildSettings.findOne({ guildId });
-        if (!guildSettings) {
-            guildSettings = new GuildSettings({ guildId });
-            await guildSettings.save();
-        }
-
-        // Get all users in the guild (excluding bots)
-        const guildMembers = await channel.guild.members.fetch();
-        const allUserIds = guildMembers.filter(member => !member.user.bot).map(member => member.user.id);
-
-        // Create profiles for all users who don't have them
-        for (const userId of allUserIds) {
-            // Create UserProfile if doesn't exist
-            let userProfile = await UserProfile.findOne({ userId, guildId });
-            if (!userProfile) {
-                userProfile = new UserProfile({ userId, guildId, balance: 0 });
-                await userProfile.save();
-            }
-
-            // Create LevelProfile if doesn't exist
-            let levelProfile = await LevelProfile.findOne({ userId, guildId });
-            if (!levelProfile) {
-                levelProfile = new LevelProfile({ userId, guildId, xp: 0, level: 1 });
-                await levelProfile.save();
-            }
-        }
-
-        // Top 10 richest for this guild (now all users have profiles)
-        const richest = await UserProfile.find({ guildId, userId: { $in: allUserIds } }).sort({ balance: -1, userId: 1 }).limit(10);
-        let richDesc = richest.length ? richest.map((u, i) => `**${i+1}.** <@${u.userId}> — **${u.balance}** coins`).join('\n') : 'No data.';
-        const richEmbed = new EmbedBuilder()
-            .setTitle(`🏆 Top 10 Richest - ${channel.guild.name}`)
-            .setDescription(richDesc)
-            .setColor('#FFD700')
-            .setTimestamp();
-
-        // Top 10 XP for this guild (now all users have profiles)
-        const topXP = await LevelProfile.find({ guildId, userId: { $in: allUserIds } }).sort({ level: -1, xp: -1, userId: 1 }).limit(10);
-        
-        // Function to calculate total XP for a level
-        function getTotalXPForLevel(level, currentXP) {
-            let totalXP = currentXP;
-            for (let i = 1; i < level; i++) {
-                if (i === 1) {
-                    totalXP += 50; // Level 1 requires 50 XP
-                } else {
-                    let levelXP = 50;
-                    for (let j = 2; j <= i; j++) {
-                        levelXP = Math.round(levelXP * 1.5 / 50) * 50;
-                    }
-                    totalXP += levelXP;
-                }
-            }
-            return totalXP;
-        }
-        
-        let xpDesc = topXP.length ? topXP.map((u, i) => {
-            const totalXP = getTotalXPForLevel(u.level, u.xp);
-            return `**${i+1}.** <@${u.userId}> — Level **${u.level}** (${totalXP} total XP)`;
-        }).join('\n') : 'No data.';
-        
-        const xpEmbed = new EmbedBuilder()
-            .setTitle(`📈 Top 10 Most XP - ${channel.guild.name}`)
-            .setDescription(xpDesc)
-            .setColor('#5865F2')
-            .setTimestamp();
-
-        // Send or edit message with both embeds
-        if (guildSettings.leaderboardMessageId) {
+        // Get all guilds and check their leaderboard channel settings
+        for (const [guildId, guild] of client.guilds.cache) {
             try {
-                const msg = await channel.messages.fetch(guildSettings.leaderboardMessageId);
-                await msg.edit({ embeds: [richEmbed, xpEmbed] });
-            } catch (e) {
-                // Clear the old message ID from database
-                guildSettings.leaderboardMessageId = null;
-                await guildSettings.save();
+                const { getGuildSettings } = require('./schemas/GuildSettings');
+                const settings = await getGuildSettings(guildId);
                 
-                // Send new message
-                const msg = await channel.send({ embeds: [richEmbed, xpEmbed] });
-                guildSettings.leaderboardMessageId = msg.id;
-                await guildSettings.save();
+                if (!settings || !settings.leaderboardChannelId) {
+                    continue; // Skip guilds without leaderboard channel configured
+                }
+
+                const channel = await client.channels.fetch(settings.leaderboardChannelId).catch((e) => {
+                    console.log(`[Leaderboard] Failed to fetch channel for guild ${guild.name}:`, e);
+                    return null;
+                });
+                
+                if (!channel || !channel.isTextBased()) {
+                    console.log(`[Leaderboard] Channel not found or not text-based for guild ${guild.name}.`);
+                    continue;
+                }
+
+                // Get or create guild settings for message IDs
+                let guildSettings = await GuildSettings.findOne({ guildId });
+                if (!guildSettings) {
+                    guildSettings = new GuildSettings({ guildId });
+                    await guildSettings.save();
+                }
+
+                // Get all users in the guild (excluding bots)
+                const guildMembers = await channel.guild.members.fetch();
+                const allUserIds = guildMembers.filter(member => !member.user.bot).map(member => member.user.id);
+
+                // Create profiles for all users who don't have them
+                for (const userId of allUserIds) {
+                    // Create UserProfile if doesn't exist
+                    let userProfile = await UserProfile.findOne({ userId, guildId });
+                    if (!userProfile) {
+                        userProfile = new UserProfile({ userId, guildId, balance: 0 });
+                        await userProfile.save();
+                    }
+
+                    // Create LevelProfile if doesn't exist
+                    let levelProfile = await LevelProfile.findOne({ userId, guildId });
+                    if (!levelProfile) {
+                        levelProfile = new LevelProfile({ userId, guildId, xp: 0, level: 1 });
+                        await levelProfile.save();
+                    }
+                }
+
+                // Top 10 richest for this guild (now all users have profiles)
+                const richest = await UserProfile.find({ guildId, userId: { $in: allUserIds } }).sort({ balance: -1, userId: 1 }).limit(10);
+                let richDesc = richest.length ? richest.map((u, i) => `**${i+1}.** <@${u.userId}> — **${u.balance}** coins`).join('\n') : 'No data.';
+                const richEmbed = new EmbedBuilder()
+                    .setTitle(`🏆 Top 10 Richest - ${channel.guild.name}`)
+                    .setDescription(richDesc)
+                    .setColor('#FFD700')
+                    .setTimestamp();
+
+                // Top 10 XP for this guild (now all users have profiles)
+                const topXP = await LevelProfile.find({ guildId, userId: { $in: allUserIds } }).sort({ level: -1, xp: -1, userId: 1 }).limit(10);
+                
+                // Function to calculate total XP for a level
+                function getTotalXPForLevel(level, currentXP) {
+                    let totalXP = currentXP;
+                    for (let i = 1; i < level; i++) {
+                        if (i === 1) {
+                            totalXP += 50; // Level 1 requires 50 XP
+                        } else {
+                            let levelXP = 50;
+                            for (let j = 2; j <= i; j++) {
+                                levelXP = Math.round(levelXP * 1.5 / 50) * 50;
+                            }
+                            totalXP += levelXP;
+                        }
+                    }
+                    return totalXP;
+                }
+                
+                let xpDesc = topXP.length ? topXP.map((u, i) => {
+                    const totalXP = getTotalXPForLevel(u.level, u.xp);
+                    return `**${i+1}.** <@${u.userId}> — Level **${u.level}** (${totalXP} total XP)`;
+                }).join('\n') : 'No data.';
+                
+                const xpEmbed = new EmbedBuilder()
+                    .setTitle(`📈 Top 10 Most XP - ${channel.guild.name}`)
+                    .setDescription(xpDesc)
+                    .setColor('#5865F2')
+                    .setTimestamp();
+
+                // Send or edit message with both embeds
+                if (guildSettings.leaderboardMessageId) {
+                    try {
+                        const msg = await channel.messages.fetch(guildSettings.leaderboardMessageId);
+                        await msg.edit({ embeds: [richEmbed, xpEmbed] });
+                    } catch (e) {
+                        // Clear the old message ID from database
+                        guildSettings.leaderboardMessageId = null;
+                        await guildSettings.save();
+                        
+                        // Send new message
+                        const msg = await channel.send({ embeds: [richEmbed, xpEmbed] });
+                        guildSettings.leaderboardMessageId = msg.id;
+                        await guildSettings.save();
+                    }
+                } else {
+                    const msg = await channel.send({ embeds: [richEmbed, xpEmbed] });
+                    guildSettings.leaderboardMessageId = msg.id;
+                    await guildSettings.save();
+                }
+                
+                console.log(`[Leaderboard] Updated leaderboard for guild ${guild.name}`);
+            } catch (guildError) {
+                console.error(`[Leaderboard] Error updating leaderboard for guild ${guild.name}:`, guildError);
             }
-        } else {
-            const msg = await channel.send({ embeds: [richEmbed, xpEmbed] });
-            guildSettings.leaderboardMessageId = msg.id;
-            await guildSettings.save();
         }
     } catch (error) {
         console.error('[Leaderboard] Error updating leaderboards:', error);
     }
 }
 
-// In ClientReady event, start interval and force update
+// Leaderboard and final setup
 client.once(Events.ClientReady, async () => {
-    
-    // Leaderboard update on startup and every minute
-    if (process.env.LEADERBOARD_CHANNEL_ID) {
-        await updateLeaderboards(client); // Initial update
-        setInterval(() => updateLeaderboards(client), 60 * 1000);
-        console.log('[Leaderboard] Leaderboard system initialized and will update every minute.');
-    } else {
-        console.log('[Leaderboard] LEADERBOARD_CHANNEL_ID not set in .env - skipping leaderboard updates.');
-    }
-
-    // App started logs
-    console.log('bun-app-started');
-    console.log('🚀 Bot is fully ready and operational!');
+    // Leaderboard update on startup and every minute (now uses per-server configuration)
+    await updateLeaderboards(client); // Initial update
+    setInterval(() => updateLeaderboards(client), 60 * 1000);
+    console.log('[Leaderboard] Leaderboard system initialized and will update every minute for configured servers.');
 
     // RAM logging every 30 minutes
     setInterval(() => {

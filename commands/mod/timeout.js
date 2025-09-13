@@ -1,13 +1,14 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
-const OWNER_ROLE_ID = process.env.OWNER_ROLE_ID;
-const MANAGER_ROLE_ID = process.env.MANAGER_ROLE_ID;
-const MODERATOR_ROLE_ID = process.env.MODERATOR_ROLE_ID;
 
-function getRoleLevel(member) {
-    if (member.roles.cache.has(OWNER_ROLE_ID)) return 3;
-    if (member.roles.cache.has(MANAGER_ROLE_ID)) return 2;
-    if (member.roles.cache.has(MODERATOR_ROLE_ID)) return 1;
+const { getGuildSettings } = require('../../schemas/GuildSettings');
+
+
+function getRoleLevel(member, settings) {
+    if (!settings) return 0;
+    if (settings.ownerRoleId && member.roles.cache.has(settings.ownerRoleId)) return 3;
+    if (settings.managerRoleId && member.roles.cache.has(settings.managerRoleId)) return 2;
+    if (settings.moderatorRoleId && member.roles.cache.has(settings.moderatorRoleId)) return 1;
     return 0;
 }
 
@@ -40,6 +41,8 @@ module.exports = {
                     flags: 64
                 });
             }
+        const guildId = interaction.guild.id;
+        const settings = await getGuildSettings(guildId);
         const targetUser = interaction.options.getUser('target');
         const duration = interaction.options.getInteger('duration');
         const reason = interaction.options.getString('reason') || 'No reason provided';
@@ -47,20 +50,20 @@ module.exports = {
         const executor = interaction.member;
         const target = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
-        const executorLevel = getRoleLevel(executor);
-        const targetLevel = getRoleLevel(target);
+        const executorLevel = getRoleLevel(executor, settings);
+        const targetLevel = getRoleLevel(target, settings);
 
         if (executorLevel === 0) {
-            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+            return interaction.reply({ content: 'You do not have permission to use this command.', flags: 64 });
         }
         if (executorLevel <= targetLevel) {
-            return interaction.reply({ content: 'You can only timeout users with a lower role than yourself.', ephemeral: true });
+            return interaction.reply({ content: 'You can only timeout users with a lower role than yourself.', flags: 64 });
         }
         if (!target) {
-            return interaction.reply({ content: 'User not found in this server.', ephemeral: true });
+            return interaction.reply({ content: 'User not found in this server.', flags: 64 });
         }
         if (!target.moderatable) {
-            return interaction.reply({ content: 'I cannot timeout this user.', ephemeral: true });
+            return interaction.reply({ content: 'I cannot timeout this user.', flags: 64 });
         }
 
         try {
@@ -75,7 +78,7 @@ module.exports = {
             });
         } catch (error) {
             console.error(`[TIMEOUT] Error timing out ${targetUser.tag}:`, error);
-            await interaction.reply({ content: 'Failed to timeout the user.', ephemeral: true });
+            await interaction.reply({ content: 'Failed to timeout the user.', flags: 64 });
         }
     }
 };

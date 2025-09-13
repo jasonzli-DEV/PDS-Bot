@@ -1,20 +1,22 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
-const OWNER_ROLE_ID = process.env.OWNER_ROLE_ID;
-const MANAGER_ROLE_ID = process.env.MANAGER_ROLE_ID;
-const MODERATOR_ROLE_ID = process.env.MODERATOR_ROLE_ID;
 
-function getRoleLevel(member) {
-    if (member.roles.cache.has(OWNER_ROLE_ID)) return 3;
-    if (member.roles.cache.has(MANAGER_ROLE_ID)) return 2;
-    if (member.roles.cache.has(MODERATOR_ROLE_ID)) return 1;
+const { getGuildSettings } = require('../../schemas/GuildSettings');
+
+
+function getRoleLevel(member, settings) {
+    if (!settings) return 0;
+    if (settings.ownerRoleId && member.roles.cache.has(settings.ownerRoleId)) return 3;
+    if (settings.managerRoleId && member.roles.cache.has(settings.managerRoleId)) return 2;
+    if (settings.moderatorRoleId && member.roles.cache.has(settings.moderatorRoleId)) return 1;
     return 0;
 }
 
-function getRoleLevelById(roleId) {
-    if (roleId === OWNER_ROLE_ID) return 3;
-    if (roleId === MANAGER_ROLE_ID) return 2;
-    if (roleId === MODERATOR_ROLE_ID) return 1;
+function getRoleLevelById(roleId, settings) {
+    if (!settings) return 0;
+    if (roleId === settings.ownerRoleId) return 3;
+    if (roleId === settings.managerRoleId) return 2;
+    if (roleId === settings.moderatorRoleId) return 1;
     return 0;
 }
 
@@ -60,6 +62,8 @@ module.exports = {
                     flags: 64
                 });
             }
+        const guildId = interaction.guild.id;
+        const settings = await getGuildSettings(guildId);
         const subcommand = interaction.options.getSubcommand();
         const targetUser = interaction.options.getUser('target');
         const role = interaction.options.getRole('role');
@@ -67,35 +71,35 @@ module.exports = {
         const target = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
 
         if (!target) {
-            return interaction.reply({ content: 'User not found in this server.', ephemeral: true });
+            return interaction.reply({ content: 'User not found in this server.', flags: 64 });
         }
         if (!role.editable) {
-            return interaction.reply({ content: 'I cannot manage this role.', ephemeral: true });
+            return interaction.reply({ content: 'I cannot manage this role.', flags: 64 });
         }
 
-        const executorLevel = getRoleLevel(executor);
-        const targetLevel = getRoleLevel(target);
-        const roleLevel = getRoleLevelById(role.id);
+        const executorLevel = getRoleLevel(executor, settings);
+        const targetLevel = getRoleLevel(target, settings);
+        const roleLevel = getRoleLevelById(role.id, settings);
 
         if (executorLevel === 0) {
-            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+            return interaction.reply({ content: 'You do not have permission to use this command.', flags: 64 });
         }
         // Only allow adding/removing roles lower than executor's level
         if (executorLevel <= roleLevel || executorLevel <= targetLevel) {
-            return interaction.reply({ content: 'You can only manage roles and users with a lower role than yourself.', ephemeral: true });
+            return interaction.reply({ content: 'You can only manage roles and users with a lower role than yourself.', flags: 64 });
         }
 
         try {
             if (subcommand === 'add') {
                 if (target.roles.cache.has(role.id)) {
-                    return interaction.reply({ content: 'User already has this role.', ephemeral: true });
+                    return interaction.reply({ content: 'User already has this role.', flags: 64 });
                 }
                 await target.roles.add(role);
                 console.log(`[ROLE] ${interaction.user.tag} added role ${role.name} to ${targetUser.tag}`);
                 await interaction.reply({ content: `✅ Added ${role} to <@${targetUser.id}>.` });
             } else if (subcommand === 'remove') {
                 if (!target.roles.cache.has(role.id)) {
-                    return interaction.reply({ content: 'User does not have this role.', ephemeral: true });
+                    return interaction.reply({ content: 'User does not have this role.', flags: 64 });
                 }
                 await target.roles.remove(role);
                 console.log(`[ROLE] ${interaction.user.tag} removed role ${role.name} from ${targetUser.tag}`);
@@ -103,7 +107,7 @@ module.exports = {
             }
         } catch (error) {
             console.error(`[ROLE] Error managing role ${role.name} for ${targetUser.tag}:`, error);
-            await interaction.reply({ content: 'Failed to manage the role.', ephemeral: true });
+            await interaction.reply({ content: 'Failed to manage the role.', flags: 64 });
         }
     }
 };

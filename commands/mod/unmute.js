@@ -18,14 +18,14 @@ module.exports = {
                     flags: 64
                 });
             }
-        // Role IDs from .env
-        const ownerRoleId = process.env.OWNER_ROLE_ID;
-        const managerRoleId = process.env.MANAGER_ROLE_ID;
-        const moderatorRoleId = process.env.MODERATOR_ROLE_ID;
-        const memberRoles = interaction.member.roles.cache;
-        const hasOwnerRole = ownerRoleId && memberRoles.has(ownerRoleId);
-        const hasManagerRole = managerRoleId && memberRoles.has(managerRoleId);
-        const hasModeratorRole = moderatorRoleId && memberRoles.has(moderatorRoleId);
+
+    const { getGuildSettings } = require('../../schemas/GuildSettings');
+    const guildId = interaction.guild.id;
+    const settings = await getGuildSettings(guildId);
+    const memberRoles = interaction.member.roles.cache;
+    const hasOwnerRole = settings.ownerRoleId && memberRoles.has(settings.ownerRoleId);
+    const hasManagerRole = settings.managerRoleId && memberRoles.has(settings.managerRoleId);
+    const hasModeratorRole = settings.moderatorRoleId && memberRoles.has(settings.moderatorRoleId);
 
         if (!hasOwnerRole && !hasManagerRole && !hasModeratorRole && !interaction.member.permissions.has(PermissionFlagsBits.MuteMembers)) {
             return interaction.reply({
@@ -48,34 +48,34 @@ module.exports = {
         }
         // Prevent unmuting the server owner
         if (targetUser.id === interaction.guild.ownerId) {
-            return interaction.reply({ content: '❌ You cannot unmute the server owner.', ephemeral: true });
+            return interaction.reply({ content: '❌ You cannot unmute the server owner.', flags: 64 });
         }
 
         try {
             const member = await interaction.guild.members.fetch(targetUser.id);
             // --- Role-based unmute restrictions ---
-            const targetHasOwnerRole = ownerRoleId && member.roles.cache.has(ownerRoleId);
-            const targetHasManagerRole = managerRoleId && member.roles.cache.has(managerRoleId);
-            const targetHasModeratorRole = moderatorRoleId && member.roles.cache.has(moderatorRoleId);
+            const targetHasOwnerRole = settings.ownerRoleId && member.roles.cache.has(settings.ownerRoleId);
+            const targetHasManagerRole = settings.managerRoleId && member.roles.cache.has(settings.managerRoleId);
+            const targetHasModeratorRole = settings.moderatorRoleId && member.roles.cache.has(settings.moderatorRoleId);
             // Prevent unmuting the owner
             if (targetHasOwnerRole) {
-                return interaction.reply({ content: '❌ You cannot unmute the server owner.', ephemeral: true });
+                return interaction.reply({ content: '❌ You cannot unmute the server owner.', flags: 64 });
             }
             // Moderator cannot unmute manager or moderator
             if (hasModeratorRole && !hasManagerRole && !hasOwnerRole && (targetHasManagerRole || targetHasModeratorRole)) {
-                return interaction.reply({ content: '❌ Moderators can only unmute regular users.', ephemeral: true });
+                return interaction.reply({ content: '❌ Moderators can only unmute regular users.', flags: 64 });
             }
             // Manager cannot unmute owner or manager
             if (hasManagerRole && !hasOwnerRole && (targetHasOwnerRole || targetHasManagerRole)) {
-                return interaction.reply({ content: '❌ Managers can only unmute moderators and regular users.', ephemeral: true });
+                return interaction.reply({ content: '❌ Managers can only unmute moderators and regular users.', flags: 64 });
             }
             // Check if target has higher roles
             if (member.roles.highest.position >= interaction.member.roles.highest.position) {
-                return interaction.reply({ content: '❌ You cannot unmute someone with equal or higher roles.', ephemeral: true });
+                return interaction.reply({ content: '❌ You cannot unmute someone with equal or higher roles.', flags: 64 });
             }
             // Check if target is not muted
             if (!member.isCommunicationDisabled()) {
-                return interaction.reply({ content: '❌ This user is not muted.', ephemeral: true });
+                return interaction.reply({ content: '❌ This user is not muted.', flags: 64 });
             }
             // Remove timeout (unmute)
             await member.timeout(null, 'Unmuted by command');
@@ -94,7 +94,7 @@ module.exports = {
             console.log(`[UNMUTE] ${interaction.user.tag} (${interaction.user.id}) unmuted ${targetUser.tag} (${targetUser.id}) in ${interaction.guild.name}.`);
         } catch (error) {
             console.error('Error unmuting user:', error);
-            await interaction.reply({ content: '❌ An error occurred while unmuting the user. Please check my permissions.', ephemeral: true });
+            await interaction.reply({ content: '❌ An error occurred while unmuting the user. Please check my permissions.', flags: 64 });
         }
     },
 };
