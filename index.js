@@ -440,9 +440,6 @@ client.once(Events.ClientReady, async () => {
     } else {
         console.log('ℹ️ No VOICE_CHANNEL_ID set in .env - skipping voice connection');
     }
-    
-    console.log('bun-app-started');
-    console.log('🚀 Bot is fully ready and operational!');
 });
 
 // Error handling
@@ -948,6 +945,10 @@ client.once(Events.ClientReady, async () => {
     } else {
         console.log('[Leaderboard] LEADERBOARD_CHANNEL_ID not set in .env - skipping leaderboard updates.');
     }
+
+    // App started logs
+    console.log('bun-app-started');
+    console.log('🚀 Bot is fully ready and operational!');
 
     // RAM logging every 30 minutes
     setInterval(() => {
