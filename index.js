@@ -1,4 +1,18 @@
 require('dotenv').config();
+// Wrap global timers to clamp accidental negative durations and log the callsite
+const _originalSetTimeout = global.setTimeout;
+global.setTimeout = (fn, delay, ...args) => {
+    try {
+        if (typeof delay === 'number' && delay < 0) {
+            console.warn(`⚠️ Detected negative setTimeout delay: ${delay}. Clamping to 1ms.`);
+            console.warn(new Error('Negative setTimeout stack').stack);
+            delay = 1;
+        }
+    } catch (e) {
+        // ignore
+    }
+    return _originalSetTimeout(fn, delay, ...args);
+};
 const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Partials, Collection, ActivityType, PresenceUpdateStatus, Events, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
@@ -8,11 +22,11 @@ const mongoose = require('mongoose');
 const ffmpeg = require('ffmpeg-static');
 const { spawn } = require('child_process');
 
-// Track active connections and resources
+// Map of active voice connections and their resources
 const activeConnections = new Map();
 
-// Bot status mode (true = use .env, false = use dynamic rotation)
-let useEnvStatus = process.env.USE_ENV_STATUS !== 'false'; // Default to true unless explicitly disabled
+// Flag controlling whether status uses environment config or rotates dynamically
+let useEnvStatus = process.env.USE_ENV_STATUS !== 'false';
 
 // Bot status mapping system
 const botStatuses = {
@@ -59,7 +73,7 @@ const botStatuses = {
     }
 };
 
-// Function to set bot status
+// Set the bot presence and activity
 function setBotStatus(statusKey = 'online', useEnv = false) {
     let statusConfig, activity;
     
@@ -112,7 +126,7 @@ function setBotStatus(statusKey = 'online', useEnv = false) {
     }
 }
 
-// Function to toggle between environment and dynamic status modes
+// Toggle status mode between environment-based and dynamic rotation
 function toggleStatusMode() {
     useEnvStatus = !useEnvStatus;
     console.log(`🔄 Status mode switched to: ${useEnvStatus ? 'Environment Variables' : 'Dynamic Rotation'}`);
@@ -120,12 +134,12 @@ function toggleStatusMode() {
     return useEnvStatus;
 }
 
-// Function to force update status from environment
+// Force update presence from environment variables
 function updateStatusFromEnv() {
     setBotStatus('online', true);
 }
 
-// Memory-efficient cleanup function
+// Stop and cleanup audio player and related streams
 function cleanupAudio(player, streams = []) {
     try {
         if (player) {
@@ -147,7 +161,7 @@ function cleanupAudio(player, streams = []) {
 }
 
 
-// Graceful shutdown
+// Gracefully shut down audio, DB, and client connections
 async function handleShutdown() {
     console.log('Shutting down...');
     try {
@@ -170,7 +184,7 @@ async function handleShutdown() {
 process.on('SIGINT', handleShutdown);
 process.on('SIGTERM', handleShutdown);
 
-// Command handling setup
+// Load command modules from `commands` directory
 const commandsPath = path.join(__dirname, 'commands');
 function getAllCommandFiles(dir, files = []) {
     if (!fs.existsSync(dir)) return files;
@@ -716,29 +730,84 @@ async function createChallenge(interaction, opponentId, betAmount) {
 
 // Interaction handler
 client.on(Events.InteractionCreate, async interaction => {
-    try {
-        if (interaction.isChatInputCommand()) {
-            const command = client.commands.get(interaction.commandName);
-            if (!command) return;
-        await command.execute(interaction);
-        } else if (interaction.isButton()) {
-            await handleButtonInteraction(interaction);
-        } else if (interaction.isModalSubmit()) {
-            await handleModalSubmit(interaction);
-        } else if (interaction.isStringSelectMenu()) {
-            await handleSelectMenu(interaction);
-        }
-    } catch (error) {
-        console.error(`Error handling interaction:`, error);
-        try {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.reply({ content: 'Error executing command', flags: 64 });
-            } else if (interaction.deferred) {
-                await interaction.editReply({ content: 'Error executing command' });
-            } else {
-                await interaction.followUp({ content: 'Error executing command', flags: 64 });
+    if (interaction.isChatInputCommand()) {
+        const command = client.commands.get(interaction.commandName);
+        if (!command) return;
+
+        const userTag = interaction.user?.tag || interaction.userId;
+        const start = Date.now();
+
+        // Wrap interaction reply methods to handle Unknown interaction (10062)
+        let interactionExpired = false;
+        const wrapMethod = (orig) => async (...args) => {
+            if (interactionExpired) {
+                // Already expired/unknown - skip attempts
+                console.warn(`[${command.data?.name?.toUpperCase() || 'CMD'}] Skipping call to interaction method because interaction is expired.`);
+                return null;
             }
-        } catch {}
+            try {
+                return await orig(...args);
+            } catch (e) {
+                const code = e?.code || e?.rawError?.code;
+                if (code === 10062) {
+                    interactionExpired = true;
+                    console.warn(`[${command.data?.name?.toUpperCase() || 'CMD'}] Interaction became unknown while replying; aborting further replies.`);
+                    return null;
+                }
+                throw e;
+            }
+        };
+
+        // Monkey-patch instance methods for this interaction only
+        const origDefer = interaction.deferReply.bind(interaction);
+        const origReply = interaction.reply.bind(interaction);
+        const origEdit = interaction.editReply.bind(interaction);
+        const origFollow = interaction.followUp.bind(interaction);
+        interaction.deferReply = wrapMethod(origDefer);
+        interaction.reply = wrapMethod(origReply);
+        interaction.editReply = wrapMethod(origEdit);
+        interaction.followUp = wrapMethod(origFollow);
+
+        try {
+            await command.execute(interaction);
+            const elapsed = Date.now() - start;
+            const apiLatency = Math.round(client.ws.ping || 0);
+            if ((command.data && command.data.name) === 'ping') {
+                console.log(`[${command.data.name.toUpperCase()}] ${userTag} ran ping: Bot Latency ${elapsed}ms, API Latency ${apiLatency}ms`);
+            } else {
+                console.log(`[${command.data?.name?.toUpperCase() || 'CMD'}] ${userTag} ran ${command.data?.name || 'unknown'}`);
+            }
+        } catch (error) {
+            const code = error?.code || error?.rawError?.code;
+            if (code === 10062) {
+                console.warn(`[${interaction.commandName?.toUpperCase() || 'CMD'}] Command error: Unknown interaction (likely expired) - skipping reply`);
+                return;
+            }
+            console.error(`[${interaction.commandName?.toUpperCase() || 'CMD'}] Command error:`, error);
+            try {
+                if (!interaction.deferred && !interaction.replied) {
+                    await interaction.reply({ content: 'Error executing command', flags: 64 });
+                } else if (interaction.deferred) {
+                    await interaction.editReply({ content: 'Error executing command' });
+                } else {
+                    await interaction.followUp({ content: 'Error executing command', flags: 64 });
+                }
+            } catch (err) {
+                console.error('Failed to notify user about command error:', err);
+            }
+        } finally {
+            // Restore original methods to avoid leaking wrappers
+            try { interaction.deferReply = origDefer; } catch {}
+            try { interaction.reply = origReply; } catch {}
+            try { interaction.editReply = origEdit; } catch {}
+            try { interaction.followUp = origFollow; } catch {}
+        }
+    } else if (interaction.isButton()) {
+        try { await handleButtonInteraction(interaction); } catch (e) { console.error('Button handler error:', e); }
+    } else if (interaction.isModalSubmit()) {
+        try { await handleModalSubmit(interaction); } catch (e) { console.error('Modal handler error:', e); }
+    } else if (interaction.isStringSelectMenu()) {
+        try { await handleSelectMenu(interaction); } catch (e) { console.error('Select menu handler error:', e); }
     }
 });
 

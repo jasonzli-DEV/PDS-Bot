@@ -3,111 +3,65 @@ const mongoose = require('mongoose');
 const UserProfile = require('../../schemas/UserProfile');
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('pay')
-        .setDescription('Send money to another user')
-        .addUserOption(option =>
-            option.setName('target')
-                .setDescription('The user to send money to')
-                .setRequired(true)
-        )
-        .addIntegerOption(option =>
-            option.setName('amount')
-                .setDescription('Amount to send')
-                .setRequired(true)
-                .setMinValue(1)
-        ),
+  data: new SlashCommandBuilder()
+    .setName('pay')
+    .setDescription('Pay another user some coins.')
+    .addUserOption(option =>
+      option.setName('target').setDescription('User to pay').setRequired(true)
+    )
+    .addIntegerOption(option =>
+      option.setName('amount').setDescription('Amount to pay').setRequired(true)
+    ),
+  async execute(interaction) {
+    const payerId = interaction.user.id;
+    const targetUser = interaction.options.getUser('target');
+    const amount = interaction.options.getInteger('amount');
 
-    async execute(interaction) {
-        try {
-            await interaction.deferReply();
+    if (targetUser.bot) {
+      return interaction.reply({ content: "You can't pay bots.", ephemeral: true });
+    }
+    if (targetUser.id === payerId) {
+      return interaction.reply({ content: "You can't pay yourself.", ephemeral: true });
+    }
+    if (amount <= 0) {
+      return interaction.reply({ content: "Amount must be positive.", ephemeral: true });
+    }
 
-            const sender = interaction.user;
-            const target = interaction.options.getUser('target');
-            const amount = interaction.options.getInteger('amount');
-            const guildId = interaction.guildId;
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const payer = await UserProfile.findOne({ userId: payerId }).session(session);
+      const payee = await UserProfile.findOne({ userId: targetUser.id }).session(session);
 
-            // Validate target
-            if (target.bot) {
-                return interaction.editReply("You can't send money to bots!");
-            }
+      if (!payer || payer.coins < amount) {
+        await session.abortTransaction();
+        return interaction.reply({ content: "You don't have enough coins.", ephemeral: true });
+      }
+      if (!payee) {
+        await session.abortTransaction();
+        return interaction.reply({ content: "Target user does not have a profile.", ephemeral: true });
+      }
 
-            if (sender.id === target.id) {
-                return interaction.editReply("You can't send money to yourself!");
-            }
+      payer.coins -= amount;
+      payee.coins += amount;
+      await payer.save({ session });
+      await payee.save({ session });
+      await session.commitTransaction();
 
-            // Get or create sender's profile
-            let senderProfile = await UserProfile.findOne({ userId: sender.id, guildId });
-            if (!senderProfile) {
-                senderProfile = new UserProfile({ userId: sender.id, guildId, balance: 0 });
-            }
-
-            // Check if sender has enough money
-            if (senderProfile.balance < amount) {
-                return interaction.editReply(`You don't have enough money! Your balance: ${senderProfile.balance} coins`);
-            }
-
-            // Get or create target's profile
-            let targetProfile = await UserProfile.findOne({ userId: target.id, guildId });
-            if (!targetProfile) {
-                targetProfile = new UserProfile({ userId: target.id, guildId, balance: 0 });
-            }
-
-            // Start transaction
-            if (!mongoose.connection.readyState) {
-                return interaction.editReply('Database connection not ready. Please try again.');
-            }
-            const session = await mongoose.startSession();
-            try {
-                await session.withTransaction(async () => {
-                    // Update balances
-                    senderProfile.balance -= amount;
-                    targetProfile.balance += amount;
-
-                    // Save both profiles
-                    await senderProfile.save();
-                    await targetProfile.save();
-                });
-
-                // Log the transaction
-                console.log(`[PAY] ${sender.tag} sent ${amount} to ${target.tag} in ${interaction.guild.name}`);
-
-                // Send success message
-                await interaction.editReply({
-                    content: `Successfully sent ${amount} coins to ${target}!\n` +
-                            `Your new balance: ${senderProfile.balance} coins\n` +
-                            `${target.username}'s new balance: ${targetProfile.balance} coins`
-                });
-
-                // Send DM to receiver
-                try {
-                    await target.send(`${sender.tag} sent you ${amount} coins! Your new balance: ${targetProfile.balance} coins`);
-                } catch (dmError) {
-                    console.log(`Couldn't send DM to ${target.tag}`);
-                }
-
-            } catch (transactionError) {
-                console.error('[PAY] Transaction error:', transactionError);
-                await interaction.editReply('There was an error processing the transaction.');
-            } finally {
-                await session.endSession();
-            }
-
-        } catch (error) {
-            console.error('[PAY] Command error:', error);
-            if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({
-                    content: 'There was an error processing your payment.',
-                    flags: 64 // EPHEMERAL flag
-                });
-            } else if (interaction.deferred) {
-                await interaction.editReply('There was an error processing your payment.');
-            } else {
-                await interaction.followUp({
-                    content: 'There was an error processing your payment.',
-                    flags: 64 // EPHEMERAL flag
-                });
-            }
-        }
-    },
+      // Notify receiver via DM
+      try {
+        await targetUser.send({ content: `You received ${amount} coins from ${interaction.user.username}.` });
+      } catch (dmErr) {
+        console.info('[PAY] Could not DM recipient (privacy settings).');
+      }
+      return interaction.reply({ content: `You paid ${targetUser.username} ${amount} coins!`, ephemeral: false });
+    } catch (err) {
+      await session.abortTransaction();
+      console.error('Pay command error:', err);
+      return interaction.reply({ content: "An error occurred while processing your payment.", ephemeral: true });
+    } finally {
+      session.endSession();
+    }
+  }
+// removed extra closing brace
 };
