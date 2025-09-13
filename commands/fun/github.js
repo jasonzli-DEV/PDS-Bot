@@ -39,8 +39,9 @@ module.exports = {
             } else if (repoInput.includes('/')) {
                 [owner, repo] = repoInput.split('/');
             } else {
-                owner = 'github';
-                repo = repoInput;
+                // Default to the requested repo, or fallback to PDS-Bot
+                owner = 'jasonzli-DEV';
+                repo = 'PDS-Bot';
             }
         }
 
