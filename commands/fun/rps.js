@@ -1348,6 +1348,191 @@ function determineWinner(choice1, choice2) {
     return 'player2';
 }
 
+// RPS Interaction Handlers
+async function handleRPSButtonInteraction(interaction) {
+    const { customId } = interaction;
+    
+    if (customId === 'rps_challenge') {
+        // Handle challenge button
+        await handleChallenge(interaction);
+        
+    } else if (customId === 'rps_view_challenges') {
+        // Handle view challenges button
+        await handleViewChallenges(interaction);
+        
+    } else if (customId === 'rps_ai') {
+        // Show bet modal for AI game
+        const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+        const modal = new ModalBuilder()
+            .setCustomId('rps_bet_modal_ai')
+            .setTitle('🎮 RPS vs AI - Enter Bet Amount');
+        
+        const betInput = new TextInputBuilder()
+            .setCustomId('bet_amount')
+            .setLabel('Bet Amount (coins)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Enter amount to bet...')
+            .setRequired(true)
+            .setMinLength(1)
+            .setMaxLength(10);
+        
+        const actionRow = new ActionRowBuilder().addComponents(betInput);
+        modal.addComponents(actionRow);
+        
+        await interaction.showModal(modal);
+        
+    } else if (customId === 'rps_user') {
+        // Show user selection menu
+        const embed = new EmbedBuilder()
+            .setTitle('👥 Select Opponent')
+            .setDescription('Choose a user to challenge to Rock, Paper, Scissors!')
+            .setColor('#00ff00');
+        
+        // Get all members in the guild
+        const members = await interaction.guild.members.fetch();
+        const userOptions = members
+            .filter(member => !member.user.bot && member.user.id !== interaction.user.id)
+            .map(member => ({
+                label: member.user.username,
+                value: member.user.id,
+                description: `Challenge ${member.user.username}`
+            }))
+            .slice(0, 25); // Discord limit
+        
+        if (userOptions.length === 0) {
+            return interaction.reply({
+                content: 'No other users found to challenge!',
+                flags: 64
+            });
+        }
+        
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('rps_user_select')
+            .setPlaceholder('Choose an opponent...')
+            .addOptions(userOptions);
+        
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+        
+        await interaction.update({
+            embeds: [embed],
+            components: [row]
+        });
+        
+    } else if (customId.startsWith('rps_choice_')) {
+        // Handle RPS choice selection
+        await handleRPSChoice(interaction);
+    }
+}
+
+async function handleRPSSelectMenu(interaction) {
+    const { customId, values } = interaction;
+    
+    if (customId === 'rps_user_select') {
+        const opponentId = values[0];
+        const opponent = await interaction.client.users.fetch(opponentId);
+        
+        // Show bet modal for user game
+        const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+        const modal = new ModalBuilder()
+            .setCustomId(`rps_bet_modal_user_${opponentId}`)
+            .setTitle(`🎮 RPS vs ${opponent.username} - Enter Bet Amount`);
+        
+        const betInput = new TextInputBuilder()
+            .setCustomId('bet_amount')
+            .setLabel('Bet Amount (coins)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Enter amount to bet...')
+            .setRequired(true)
+            .setMinLength(1)
+            .setMaxLength(10);
+        
+        const actionRow = new ActionRowBuilder().addComponents(betInput);
+        modal.addComponents(actionRow);
+        
+        await interaction.showModal(modal);
+        
+    } else if (customId === 'rps_accept_challenge') {
+        const challengeId = values[0];
+        await acceptChallenge(interaction, challengeId);
+    }
+}
+
+async function handleRPSModalSubmit(interaction) {
+    const { customId } = interaction;
+    
+    if (customId === 'rps_bet_modal_ai') {
+        const betAmount = parseInt(interaction.fields.getTextInputValue('bet_amount'));
+        
+        if (isNaN(betAmount) || betAmount < 1) {
+            return interaction.reply({
+                content: 'Please enter a valid bet amount (minimum 1 coin).',
+                flags: 64
+            });
+        }
+        
+        // Check user balance
+        let userProfile = await UserProfile.findOne({ 
+            userId: interaction.user.id, 
+            guildId: interaction.guildId 
+        });
+        
+        if (!userProfile) {
+            userProfile = new UserProfile({
+                userId: interaction.user.id,
+                guildId: interaction.guildId,
+                balance: 100
+            });
+            await userProfile.save();
+        }
+        
+        if (userProfile.balance < betAmount) {
+            return interaction.reply({
+                content: `❌ You don't have enough coins! Your balance: ${userProfile.balance} coins`,
+                flags: 64
+            });
+        }
+        
+        // Start AI game with bet
+        await startAIGame(interaction, betAmount);
+        
+    } else if (customId.startsWith('rps_bet_modal_user_')) {
+        const opponentId = customId.replace('rps_bet_modal_user_', '');
+        const betAmount = parseInt(interaction.fields.getTextInputValue('bet_amount'));
+        
+        if (isNaN(betAmount) || betAmount < 1) {
+            return interaction.reply({
+                content: 'Please enter a valid bet amount (minimum 1 coin).',
+                flags: 64
+            });
+        }
+        
+        // Check user balance
+        let userProfile = await UserProfile.findOne({ 
+            userId: interaction.user.id, 
+            guildId: interaction.guildId 
+        });
+        
+        if (!userProfile) {
+            userProfile = new UserProfile({
+                userId: interaction.user.id,
+                guildId: interaction.guildId,
+                balance: 100
+            });
+            await userProfile.save();
+        }
+        
+        if (userProfile.balance < betAmount) {
+            return interaction.reply({
+                content: `❌ You don't have enough coins! Your balance: ${userProfile.balance} coins`,
+                flags: 64
+            });
+        }
+        
+        // Create challenge with bet
+        await createChallenge(interaction, opponentId, betAmount);
+    }
+}
+
 // Export functions for use in index.js
 module.exports = {
     data: module.exports.data,
@@ -1367,5 +1552,8 @@ module.exports = {
     startAnimatedLoading,
     generateGameId,
     determineFirstPlayer,
-    handleForfeit
+    handleForfeit,
+    handleRPSButtonInteraction,
+    handleRPSSelectMenu,
+    handleRPSModalSubmit
 };

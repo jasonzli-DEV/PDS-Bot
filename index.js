@@ -455,174 +455,35 @@ client.on('warn', warning => {
 async function handleButtonInteraction(interaction) {
     const { customId } = interaction;
     
-    if (customId === 'rps_challenge') {
-        // Handle challenge button
-        const { handleChallenge } = require('./commands/fun/rps');
-        await handleChallenge(interaction);
-        
-    } else if (customId === 'rps_view_challenges') {
-        // Handle view challenges button
-        const { handleViewChallenges } = require('./commands/fun/rps');
-        await handleViewChallenges(interaction);
-        
-    } else if (customId === 'rps_ai') {
-        // Show bet modal for AI game
-        const modal = new ModalBuilder()
-            .setCustomId('rps_bet_modal_ai')
-            .setTitle('🎮 RPS vs AI - Enter Bet Amount');
-        
-        const betInput = new TextInputBuilder()
-            .setCustomId('bet_amount')
-            .setLabel('Bet Amount (coins)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter amount to bet...')
-            .setRequired(true)
-            .setMinLength(1)
-            .setMaxLength(10);
-        
-        const actionRow = new ActionRowBuilder().addComponents(betInput);
-        modal.addComponents(actionRow);
-        
-        await interaction.showModal(modal);
-        
-    } else if (customId === 'rps_user') {
-        // Show user selection menu
-        const embed = new EmbedBuilder()
-            .setTitle('👥 Select Opponent')
-            .setDescription('Choose a user to challenge to Rock, Paper, Scissors!')
-            .setColor('#00ff00');
-        
-        // Get all members in the guild
-        const members = await interaction.guild.members.fetch();
-        const userOptions = members
-            .filter(member => !member.user.bot && member.user.id !== interaction.user.id)
-            .map(member => ({
-                label: member.user.username,
-                value: member.user.id,
-                description: `Challenge ${member.user.username}`
-            }))
-            .slice(0, 25); // Discord limit
-        
-        if (userOptions.length === 0) {
-            return interaction.reply({
-                content: 'No other users found to challenge!',
-                flags: 64
-            });
-        }
-        
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('rps_user_select')
-            .setPlaceholder('Choose an opponent...')
-            .addOptions(userOptions);
-        
-        const row = new ActionRowBuilder().addComponents(selectMenu);
-        
-        await interaction.update({
-            embeds: [embed],
-            components: [row]
-        });
-        
-        } else if (customId.startsWith('rps_choice_')) {
-            // Handle RPS choice selection
-            const { handleRPSChoice } = require('./commands/fun/rps');
-            await handleRPSChoice(interaction);
-        }
+    // Handle RPS buttons
+    if (customId === 'rps_challenge' || customId === 'rps_view_challenges' || customId === 'rps_ai' || customId === 'rps_user' || customId.startsWith('rps_choice_')) {
+        const { handleRPSButtonInteraction } = require('./commands/fun/rps');
+        await handleRPSButtonInteraction(interaction);
+    
+    // Handle setup timezone button
+    } else if (customId === 'setup_timezone') {
+        const timezoneCommand = require('./commands/misc/timezone');
+        await timezoneCommand.execute(interaction);
+    
+    // Handle timezone region buttons
+    } else if (customId.startsWith('region_')) {
+        const { handleTimezoneButtonInteraction } = require('./commands/misc/timezone');
+        await handleTimezoneButtonInteraction(interaction);
+    
+    // Handle timezone sub-region buttons
+    } else if (customId.startsWith('subregion_')) {
+        const { handleTimezoneButtonInteraction } = require('./commands/misc/timezone');
+        await handleTimezoneButtonInteraction(interaction);
+    }
 }
 
 async function handleModalSubmit(interaction) {
     const { customId } = interaction;
     
-    if (customId === 'rps_bet_modal_ai') {
-        const betAmount = parseInt(interaction.fields.getTextInputValue('bet_amount'));
-        
-        if (isNaN(betAmount) || betAmount < 1) {
-            return interaction.reply({
-                content: 'Please enter a valid bet amount (minimum 1 coin).',
-                flags: 64
-            });
-        }
-        
-        // Check user balance
-        const UserProfile = require('./schemas/UserProfile');
-        let userProfile = await UserProfile.findOne({ 
-            userId: interaction.user.id, 
-            guildId: interaction.guildId 
-        });
-        
-        if (!userProfile) {
-            userProfile = new UserProfile({ 
-                userId: interaction.user.id, 
-                guildId: interaction.guildId, 
-                balance: 0 
-            });
-        }
-        
-        if (userProfile.balance < betAmount) {
-            return interaction.reply({
-                content: `You don't have enough coins! Your balance: ${userProfile.balance} coins`,
-                flags: 64
-            });
-        }
-        
-        // Start AI game
-        const { startAIGame } = require('./commands/fun/rps');
-        await startAIGame(interaction, betAmount);
-        
-    } else if (customId.startsWith('rps_bet_modal_user_')) {
-        const betAmount = parseInt(interaction.fields.getTextInputValue('bet_amount'));
-        const opponentId = customId.replace('rps_bet_modal_user_', '');
-        
-        if (isNaN(betAmount) || betAmount < 1) {
-            return interaction.reply({
-                content: 'Please enter a valid bet amount (minimum 1 coin).',
-                flags: 64
-            });
-        }
-        
-        // Check both users' balances
-        const UserProfile = require('./schemas/UserProfile');
-        let challengerProfile = await UserProfile.findOne({ 
-            userId: interaction.user.id, 
-            guildId: interaction.guildId 
-        });
-        let opponentProfile = await UserProfile.findOne({ 
-            userId: opponentId, 
-            guildId: interaction.guildId 
-        });
-        
-        if (!challengerProfile) {
-            challengerProfile = new UserProfile({ 
-                userId: interaction.user.id, 
-                guildId: interaction.guildId, 
-                balance: 0 
-            });
-        }
-        if (!opponentProfile) {
-            opponentProfile = new UserProfile({ 
-                userId: opponentId, 
-                guildId: interaction.guildId, 
-                balance: 0 
-            });
-        }
-        
-        if (challengerProfile.balance < betAmount) {
-            return interaction.reply({
-                content: `You don't have enough coins! Your balance: ${challengerProfile.balance} coins`,
-                flags: 64
-            });
-        }
-        
-        if (opponentProfile.balance < betAmount) {
-            const opponent = await interaction.client.users.fetch(opponentId);
-            return interaction.reply({
-                content: `${opponent.username} doesn't have enough coins! Their balance: ${opponentProfile.balance} coins`,
-                flags: 64
-            });
-        }
-        
-        // Create challenge
-        const { createChallenge } = require('./commands/fun/rps');
-        await createChallenge(interaction, opponentId, betAmount);
+    // Handle RPS modal submissions
+    if (customId === 'rps_bet_modal_ai' || customId.startsWith('rps_bet_modal_user_')) {
+        const { handleRPSModalSubmit } = require('./commands/fun/rps');
+        await handleRPSModalSubmit(interaction);
     } else if (customId.startsWith('purge_amount_modal_')) {
         const { handleAmountSubmit } = require('./commands/mod/purge');
         await handleAmountSubmit(interaction);
@@ -632,33 +493,17 @@ async function handleModalSubmit(interaction) {
 async function handleSelectMenu(interaction) {
     const { customId, values } = interaction;
     
-    if (customId === 'rps_user_select') {
-        const opponentId = values[0];
-        const opponent = await interaction.client.users.fetch(opponentId);
-        
-        // Show bet modal for user game
-        const modal = new ModalBuilder()
-            .setCustomId(`rps_bet_modal_user_${opponentId}`)
-            .setTitle(`🎮 RPS vs ${opponent.username} - Enter Bet Amount`);
-        
-        const betInput = new TextInputBuilder()
-            .setCustomId('bet_amount')
-            .setLabel('Bet Amount (coins)')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter amount to bet...')
-            .setRequired(true)
-            .setMinLength(1)
-            .setMaxLength(10);
-        
-        const actionRow = new ActionRowBuilder().addComponents(betInput);
-        modal.addComponents(actionRow);
-        
-        await interaction.showModal(modal);
-        
-    } else if (customId === 'rps_accept_challenge') {
-        const challengeId = values[0];
-        const { acceptChallenge } = require('./commands/fun/rps');
-        await acceptChallenge(interaction, challengeId);
+    // Handle RPS select menus
+    if (customId === 'rps_user_select' || customId === 'rps_accept_challenge') {
+        const { handleRPSSelectMenu } = require('./commands/fun/rps');
+        await handleRPSSelectMenu(interaction);
+    
+    // Handle timezone select menu
+    } else if (customId === 'timezone_select') {
+        const { handleTimezoneSelectMenu } = require('./commands/misc/timezone');
+        await handleTimezoneSelectMenu(interaction);
+    
+    // Handle purge select menu
     } else if (customId === 'purge_type_select') {
         const { handleTypeSelect } = require('./commands/mod/purge');
         await handleTypeSelect(interaction);
