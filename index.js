@@ -183,6 +183,7 @@ client.rpsChallenges = new Map();
 // Load cooldown clearing event
 const clearCooldowns = require('./events/ready/clear-cooldown');
 
+
 // Register reply-to-hello event
 const replyToHello = require('./events/messageCreate/reply-to-hello.js');
 client.on('messageCreate', replyToHello);
@@ -194,6 +195,10 @@ client.on('messageCreate', afkListener);
 // Register level-xp event
 const levelXPListener = require('./events/messageCreate/level-xp.js');
 client.on('messageCreate', levelXPListener);
+
+// Register sticky handler event (must be last to always re-sticky)
+const stickyHandler = require('./events/messageCreate/sticky-handler.js');
+client.on('messageCreate', stickyHandler);
 
 // --- RAM Optimized Audio Playback Section WITH LOOPING ---
 
