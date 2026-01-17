@@ -5,7 +5,15 @@ const defaultHost = process.env.PDS_HOST || 'providenceday.myschoolapp.com';
 function decodeToken(token) {
   try {
     const decoded = Buffer.from(token, 'base64').toString('utf8');
-    const obj = JSON.parse(decoded);
+    let obj;
+    try {
+      obj = JSON.parse(decoded);
+    } catch (e) {
+      // Some bookmarklet tokens include raw newline characters inside string values
+      // which makes the JSON invalid. Try sanitizing newlines to escaped form and parse again.
+      const sanitized = decoded.replace(/\r?\n/g, '\\n');
+      obj = JSON.parse(sanitized);
+    }
     if (obj && obj.cookies && typeof obj.cookies === 'string') {
       obj.cookies = normalizeCookies(obj.cookies);
     }
