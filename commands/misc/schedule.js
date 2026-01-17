@@ -59,33 +59,63 @@ module.exports = {
     try {
       const userId = account.userId;
       const ts = Date.now();
-      // Determine request token 't' required by datadirect endpoints
+      // Try schedule endpoints that work in browser (use cookies + request token if available)
+      const host = account.schoolHost || defaultHost;
+      // preferred: announcements for current day
+      const viewerId = account.userId;
+      const viewerPersonaId = 2;
+      // try to get a request token from context or cookies
       let requestToken = null;
       try { requestToken = (v && v.json && (v.json.RequestVerificationToken || v.json.RequestToken)) || null; } catch (e) { requestToken = null; }
       if (!requestToken) requestToken = extractRequestTokenFromCookies(account.cookies);
-      const path = `/api/datadirect/ParentStudentUserClassesGet?userId=${userId}&personaId=2&ts=${ts}` + (requestToken ? `&t=${encodeURIComponent(requestToken)}` : '');
 
-      const res = await fetchWithRenew(account, path);
-      if (!res || !res.ok) {
+      // endpoints to try (in order)
+      const endpoints = [
+        `/api/schedule/ScheduleCurrentDayAnnouncmentParentStudent/?mydayDate=&viewerId=${viewerId}&viewerPersonaId=${viewerPersonaId}`,
+        `/api/schedule/MyDayCalendarStudentList/?scheduleDate=&personaId=${viewerPersonaId}`
+      ];
+
+      let json = null;
+      let res = null;
+      for (const ep of endpoints) {
+        const path = ep + (requestToken ? (ep.includes('?') ? `&t=${encodeURIComponent(requestToken)}` : `?t=${encodeURIComponent(requestToken)}`) : '');
+        res = await fetchWithRenew(account, path);
+        if (res && res.ok) {
+          try { json = await res.json(); } catch (e) { json = null; }
+          if (json) break; // got data
+        }
+      }
+
+      if (!res || !res.ok || !json) {
         return interaction.editReply({ content: 'Failed to fetch schedule. Try re-registering or try again later.' });
       }
 
-      const json = await res.json();
-
       // Try to build a readable schedule
       let description = '';
+      // Parse schedule JSON: support multiple shapes
       if (Array.isArray(json) && json.length) {
         const items = json.slice(0, 25).map((c, i) => {
-          const title = c.CourseName || c.ClassName || c.Name || c.Title || JSON.stringify(c).slice(0, 40);
-          const teacher = c.PrimaryTeacherName || c.TeacherName || c.Teacher || '';
-          return `**${i+1}.** ${title}${teacher ? ` — ${teacher}` : ''}`;
+          const title = c.Title || c.Text || c.CourseName || c.Name || JSON.stringify(c).slice(0, 40);
+          const when = c.Date || c.ScheduleDate || '';
+          return `**${i+1}.** ${title}${when ? ` — ${when}` : ''}`;
         });
         description = items.join('\n');
       } else if (json && typeof json === 'object') {
-        // If wrapped
-        const arr = json.Items || json.classes || json.ClassList || [];
+        // Check common properties
+        // announcements list
+        let arr = json.Announcements || json.items || json.Items || json.Events || json.Calendar || json.CalendarItems || json;
+        if (arr && !Array.isArray(arr)) {
+          // try some nested patterns
+          if (Array.isArray(arr.Announcements)) arr = arr.Announcements;
+          else if (Array.isArray(arr.Items)) arr = arr.Items;
+          else if (Array.isArray(arr.events)) arr = arr.events;
+        }
         if (Array.isArray(arr) && arr.length) {
-          description = arr.slice(0, 25).map((c, i) => `**${i+1}.** ${c.CourseName || c.Name || JSON.stringify(c).slice(0,40)}`).join('\n');
+          description = arr.slice(0, 25).map((c, i) => {
+            const title = c.Title || c.Text || c.CourseName || c.Name || JSON.stringify(c).slice(0, 40);
+            const when = c.Date || c.ScheduleDate || c.StartDate || '';
+            return `**${i+1}.** ${title}${when ? ` — ${when}` : ''}`;
+          }).join('\n');
         } else {
           description = 'No schedule data found.';
         }
