@@ -290,6 +290,9 @@ async function handleModalSubmit(interaction) {
     } else if (customId.startsWith('purge_amount_modal_')) {
         const { handleAmountSubmit } = require('./commands/mod/purge');
         await handleAmountSubmit(interaction);
+    } else if (customId === 'pds_register_modal') {
+        const { handleRegisterModalSubmit } = require('./commands/misc/register');
+        await handleRegisterModalSubmit(interaction);
     }
 }
 
