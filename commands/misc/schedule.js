@@ -2,6 +2,13 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const PDSAccount = require('../../schemas/PDSAccount');
 const { verifySession, renewSession, defaultHost } = require('./pdsUtils');
 
+function extractRequestTokenFromCookies(cookies) {
+  if (!cookies) return null;
+  const m = cookies.match(/__RequestVerificationToken[^=]*=([^;\s]+)/);
+  if (m && m[1]) return decodeURIComponent(m[1]);
+  return null;
+}
+
 async function fetchWithRenew(account, path) {
   const host = account.schoolHost || defaultHost;
   const url = `https://${host}${path}`;
@@ -52,7 +59,11 @@ module.exports = {
     try {
       const userId = account.userId;
       const ts = Date.now();
-      const path = `/api/datadirect/ParentStudentUserClassesGet?userId=${userId}&personaId=2&ts=${ts}`;
+      // Determine request token 't' required by datadirect endpoints
+      let requestToken = null;
+      try { requestToken = (v && v.json && (v.json.RequestVerificationToken || v.json.RequestToken)) || null; } catch (e) { requestToken = null; }
+      if (!requestToken) requestToken = extractRequestTokenFromCookies(account.cookies);
+      const path = `/api/datadirect/ParentStudentUserClassesGet?userId=${userId}&personaId=2&ts=${ts}` + (requestToken ? `&t=${encodeURIComponent(requestToken)}` : '');
 
       const res = await fetchWithRenew(account, path);
       if (!res || !res.ok) {
