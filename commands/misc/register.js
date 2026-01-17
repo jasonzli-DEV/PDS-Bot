@@ -52,7 +52,8 @@ module.exports = {
 
     const verify = await verifySession(host, cookies, userIdFromToken);
     if (!verify.ok) {
-      return interaction.editReply({ content: 'Failed to verify token. Make sure you are logged into MySchoolApp and the token is from the correct site.' });
+      const reason = verify.status ? `status ${verify.status}` : (verify.error ? 'network error' : 'unknown');
+      return interaction.editReply({ content: `Failed to verify token (${reason}). Make sure you are logged into MySchoolApp and the token is from the correct site.` });
     }
 
     const userId = userIdFromToken || verify.json?.UserInfo?.UserId;
@@ -99,7 +100,8 @@ module.exports.handleRegisterModalSubmit = async function(interaction) {
 
     const verify = await verifySession(host, cookies, userIdFromToken);
     if (!verify.ok) {
-      return interaction.editReply({ content: 'Failed to verify token. Make sure you are logged into MySchoolApp and the token is from the correct site.' });
+      const reason = verify.status ? `status ${verify.status}` : (verify.error ? 'network error' : 'unknown');
+      return interaction.editReply({ content: `Failed to verify token (${reason}). Make sure you are logged into MySchoolApp and the token is from the correct site.` });
     }
 
     const userId = userIdFromToken || verify.json?.UserInfo?.UserId;

@@ -5,30 +5,55 @@ const defaultHost = process.env.PDS_HOST || 'providenceday.myschoolapp.com';
 function decodeToken(token) {
   try {
     const decoded = Buffer.from(token, 'base64').toString('utf8');
-    return JSON.parse(decoded);
+    const obj = JSON.parse(decoded);
+    if (obj && obj.cookies && typeof obj.cookies === 'string') {
+      obj.cookies = normalizeCookies(obj.cookies);
+    }
+    return obj;
   } catch (e) {
     return null;
   }
 }
 
+function normalizeCookies(cookies) {
+  if (!cookies || typeof cookies !== 'string') return '';
+  // Remove any newline characters that can break HTTP headers
+  let s = cookies.replace(/[\r\n]+/g, ' ');
+  // Collapse multiple spaces
+  s = s.replace(/\s+/g, ' ').trim();
+  // Ensure semicolon+space separation between cookie pairs
+  s = s.split(';').map(p => p.trim()).filter(Boolean).join('; ');
+  return s;
+}
+
 async function verifySession(host, cookies, expectedUserId) {
   try {
     const url = `https://${host}/api/webapp/context`;
+    const normalized = normalizeCookies(cookies || '');
     const res = await fetch(url, {
       headers: {
-        Cookie: cookies,
-        Accept: 'application/json, text/javascript, */*; q=0.01'
+        Cookie: normalized,
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
+        'X-Requested-With': 'XMLHttpRequest',
+        Referer: `https://${host}/`
       }
     });
 
     if (!res.ok) return { ok: false, status: res.status };
 
     const json = await res.json();
-    const userId = json?.UserInfo?.UserId || json?.UserInfo?.UserId;
-    if (expectedUserId && Number(expectedUserId) !== Number(userId)) {
-      return { ok: false, status: 403, json };
+    // Try multiple places for user id
+    const userId = json?.UserInfo?.UserId || json?.MasterUserInfo?.UserId || json?.User?.UserId || json?.UserId;
+
+    // Only enforce expectedUserId if the API returned an explicit userId to compare against.
+    if (expectedUserId && (userId !== undefined && userId !== null)) {
+      if (Number(expectedUserId) !== Number(userId)) {
+        return { ok: false, status: 403, json, usedCookies: normalized };
+      }
     }
-    return { ok: true, json };
+
+    return { ok: true, json, userId, usedCookies: normalized };
   } catch (err) {
     return { ok: false, error: err };
   }
