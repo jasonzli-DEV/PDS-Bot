@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require('discord.js');
-const GuildSettings = require('../../schemas/GuildSettings');
+const { GuildSettings } = require('../../schemas/GuildSettings');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -22,6 +22,9 @@ module.exports = {
         .setDescription('Leaderboard channel ID')
         .setRequired(false)),
   async execute(interaction) {
+    if (!interaction.guild) {
+      return interaction.reply({ content: '❌ This command can only be used in a server.', flags: 64 });
+    }
     if (!interaction.member.permissions.has('Administrator')) {
   return interaction.reply({ content: 'You need Administrator permission to use this command.', flags: 64 });
     }

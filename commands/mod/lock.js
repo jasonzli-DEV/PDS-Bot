@@ -23,9 +23,15 @@ module.exports = {
                     flags: 64
                 });
             }
-        // Check if user has moderator role
-        const moderatorRoles = process.env.MODERATOR_ROLES?.split(',').map(role => role.trim()) || [];
-        const hasModeratorRole = interaction.member.roles.cache.some(role => moderatorRoles.includes(role.id));
+        // Check if user has moderator role via per-guild settings
+        const { getGuildSettings } = require('../../schemas/GuildSettings');
+        const settings = await getGuildSettings(interaction.guild.id);
+        const memberRoles = interaction.member.roles.cache;
+        const hasModeratorRole = settings && (
+            (settings.ownerRoleId && memberRoles.has(settings.ownerRoleId)) ||
+            (settings.managerRoleId && memberRoles.has(settings.managerRoleId)) ||
+            (settings.moderatorRoleId && memberRoles.has(settings.moderatorRoleId))
+        );
         
         if (!hasModeratorRole && !interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
             return interaction.reply({

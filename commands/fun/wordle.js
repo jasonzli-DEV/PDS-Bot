@@ -1,38 +1,20 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const fetch = require('node-fetch');
-
-function getTodayDateString() {
-    // This function will accept an offset in hours
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-}
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('wordle')
         .setDescription("Show today's Wordle answer!"),
     async execute(interaction) {
-        await interaction.deferReply();
         const UserProfile = require('../../schemas/UserProfile');
-        let timezone = 'UTC';
-        let offset = 0;
-        
-        const profile = await UserProfile.findOne({ userId: interaction.user.id });
-        if (profile && profile.timezoneString) {
-            timezone = profile.timezoneString;
-            try {
-                const now = new Date();
-                const utc = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
-                const local = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
-                offset = Math.round((local.getTime() - utc.getTime()) / (60 * 60 * 1000));
-            } catch (err) {
-                timezone = 'UTC';
-            }
-        } else {
-            // No timezone set - prompt user to set it
+        // Check timezone BEFORE deferring so we can reply ephemerally if not set
+        const guildId = interaction.guildId;
+        const profile = await UserProfile.findOne(guildId
+            ? { userId: interaction.user.id, guildId }
+            : { userId: interaction.user.id }
+        );
+
+        if (!profile || !profile.timezoneString) {
+            // No timezone set - prompt user to set it (ephemeral, no defer needed)
             const embed = new EmbedBuilder()
                 .setTitle('⚠️ Timezone Not Set')
                 .setDescription('You haven\'t set your timezone yet! Set it to see the Wordle answer for your local date.')
@@ -49,7 +31,19 @@ module.exports = {
                         .setStyle(ButtonStyle.Primary)
                 );
 
-            return await interaction.followUp({ embeds: [embed], components: [row], ephemeral: true });
+            return await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+        }
+
+        await interaction.deferReply();
+        let timezone = profile.timezoneString;
+        let offset = 0;
+        try {
+            const now = new Date();
+            const utc = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
+            const local = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
+            offset = Math.round((local.getTime() - utc.getTime()) / (60 * 60 * 1000));
+        } catch (err) {
+            timezone = 'UTC';
         }
         
         // Calculate local date using timezone string

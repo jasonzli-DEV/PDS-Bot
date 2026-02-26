@@ -1,15 +1,14 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const ms = require('ms');
 const Giveaway = require('../../schemas/Giveaway');
+const { getGuildSettings } = require('../../schemas/GuildSettings');
 
-function hasModPerms(member) {
-    const ownerRoleId = process.env.OWNER_ROLE_ID;
-    const managerRoleId = process.env.MANAGER_ROLE_ID;
-    const moderatorRoleId = process.env.MODERATOR_ROLE_ID;
+function hasModPerms(member, settings) {
+    if (!settings) return member.permissions.has(PermissionFlagsBits.ManageMessages);
     return (
-        (ownerRoleId && member.roles.cache.has(ownerRoleId)) ||
-        (managerRoleId && member.roles.cache.has(managerRoleId)) ||
-        (moderatorRoleId && member.roles.cache.has(moderatorRoleId)) ||
+        (settings.ownerRoleId && member.roles.cache.has(settings.ownerRoleId)) ||
+        (settings.managerRoleId && member.roles.cache.has(settings.managerRoleId)) ||
+        (settings.moderatorRoleId && member.roles.cache.has(settings.moderatorRoleId)) ||
         member.permissions.has(PermissionFlagsBits.ManageMessages)
     );
 }
@@ -47,7 +46,8 @@ module.exports = {
                     flags: 64
                 });
             }
-        if (!hasModPerms(interaction.member)) {
+        const settings = await getGuildSettings(interaction.guild.id);
+        if (!hasModPerms(interaction.member, settings)) {
             return interaction.reply({ content: '❌ You lack permission.', flags: 64 });
         }
 

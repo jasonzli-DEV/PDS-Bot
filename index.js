@@ -215,6 +215,9 @@ client.once(Events.ClientReady, async () => {
         console.error('❌ Error deploying commands:', error);
     }
 
+    // Start cooldown cleanup interval
+    clearCooldowns();
+
     // Log current status configuration
     console.log('🤖 Bot Status Configuration:');
     console.log(`   Mode: ${useEnvStatus ? 'Environment Variables' : 'Dynamic Rotation'}`);
@@ -290,9 +293,6 @@ async function handleModalSubmit(interaction) {
     } else if (customId.startsWith('purge_amount_modal_')) {
         const { handleAmountSubmit } = require('./commands/mod/purge');
         await handleAmountSubmit(interaction);
-    } else if (customId === 'pds_register_modal') {
-        const { handleRegisterModalSubmit } = require('./commands/misc/register');
-        await handleRegisterModalSubmit(interaction);
     }
 }
 
@@ -315,51 +315,6 @@ async function handleSelectMenu(interaction) {
         await handleTypeSelect(interaction);
     }
 }
-
-
-async function createChallenge(interaction, opponentId, betAmount) {
-    
-    const challengeId = `${interaction.user.id}_${opponentId}_${Date.now()}`;
-    const challengeData = {
-        challenger: interaction.user.id,
-        opponent: opponentId,
-        betAmount: betAmount,
-        guildId: interaction.guildId,
-        timestamp: Date.now()
-    };
-    
-    interaction.client.rpsChallenges.set(opponentId, challengeData);
-    
-    const opponent = await interaction.client.users.fetch(opponentId);
-    
-    const embed = new EmbedBuilder()
-        .setTitle('🎮 Rock, Paper, Scissors Challenge!')
-        .setDescription(
-            `${interaction.user.username} has challenged ${opponent.username} to Rock, Paper, Scissors!\n\n` +
-            `💰 Bet: ${betAmount} coins each\n` +
-            `🏆 Best of 3 rounds\n\n` +
-            `${opponent.username}, use \`/rps accept\` or \`/rps deny\` to respond!`
-        )
-        .setColor('#ffff00')
-        .setFooter({ text: 'Challenge expires in 5 minutes' });
-    
-    await interaction.reply({
-        content: `${opponent}`,
-        embeds: [embed]
-    });
-    
-    // Auto-expire challenge after 5 minutes
-    setTimeout(() => {
-        if (interaction.client.rpsChallenges.has(opponentId)) {
-            interaction.client.rpsChallenges.delete(opponentId);
-            interaction.followUp({
-                content: `⏰ Challenge from ${interaction.user.username} has expired.`,
-                flags: 64
-            });
-        }
-    }, 300000);
-}
-
 
 
 // Interaction handler

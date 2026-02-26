@@ -9,4 +9,6 @@ const userProfileSchema = new Schema({
     timezoneString: { type: String, default: '' }
 }, { timestamps: true });
 
+userProfileSchema.index({ userId: 1, guildId: 1 }, { unique: true });
+
 module.exports = model('UserProfile', userProfileSchema);

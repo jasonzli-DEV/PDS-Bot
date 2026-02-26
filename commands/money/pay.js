@@ -21,6 +21,7 @@ module.exports = {
     });
   }
     const payerId = interaction.user.id;
+    const guildId = interaction.guild.id;
     const targetUser = interaction.options.getUser('target');
     const amount = interaction.options.getInteger('amount');
 
@@ -37,10 +38,10 @@ module.exports = {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-      const payer = await UserProfile.findOne({ userId: payerId }).session(session);
-      const payee = await UserProfile.findOne({ userId: targetUser.id }).session(session);
+      const payer = await UserProfile.findOne({ userId: payerId, guildId }).session(session);
+      const payee = await UserProfile.findOne({ userId: targetUser.id, guildId }).session(session);
 
-      if (!payer || payer.coins < amount) {
+      if (!payer || payer.balance < amount) {
         await session.abortTransaction();
   return interaction.reply({ content: "You don't have enough coins.", flags: 64 });
       }
@@ -49,8 +50,8 @@ module.exports = {
   return interaction.reply({ content: "Target user does not have a profile.", flags: 64 });
       }
 
-      payer.coins -= amount;
-      payee.coins += amount;
+      payer.balance -= amount;
+      payee.balance += amount;
       await payer.save({ session });
       await payee.save({ session });
       await session.commitTransaction();

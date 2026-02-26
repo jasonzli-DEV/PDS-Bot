@@ -34,9 +34,9 @@ module.exports = {
     const guildId = interaction.guild.id;
     const settings = await getGuildSettings(guildId);
     const memberRoles = interaction.member.roles.cache;
-    const hasOwnerRole = settings.ownerRoleId && memberRoles.has(settings.ownerRoleId);
-    const hasManagerRole = settings.managerRoleId && memberRoles.has(settings.managerRoleId);
-    const hasModeratorRole = settings.moderatorRoleId && memberRoles.has(settings.moderatorRoleId);
+    const hasOwnerRole = settings && settings.ownerRoleId && memberRoles.has(settings.ownerRoleId);
+    const hasManagerRole = settings && settings.managerRoleId && memberRoles.has(settings.managerRoleId);
+    const hasModeratorRole = settings && settings.moderatorRoleId && memberRoles.has(settings.moderatorRoleId);
         
         if (!hasOwnerRole && !hasManagerRole && !hasModeratorRole && !interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
             return interaction.reply({
@@ -76,9 +76,9 @@ module.exports = {
         try {
             const member = await interaction.guild.members.fetch(targetUser.id);
             // --- Role-based mute restrictions ---
-            const targetHasOwnerRole = settings.ownerRoleId && member.roles.cache.has(settings.ownerRoleId);
-            const targetHasManagerRole = settings.managerRoleId && member.roles.cache.has(settings.managerRoleId);
-            const targetHasModeratorRole = settings.moderatorRoleId && member.roles.cache.has(settings.moderatorRoleId);
+            const targetHasOwnerRole = settings && settings.ownerRoleId && member.roles.cache.has(settings.ownerRoleId);
+            const targetHasManagerRole = settings && settings.managerRoleId && member.roles.cache.has(settings.managerRoleId);
+            const targetHasModeratorRole = settings && settings.moderatorRoleId && member.roles.cache.has(settings.moderatorRoleId);
             // Prevent muting the owner
             if (targetHasOwnerRole) {
                 return interaction.reply({

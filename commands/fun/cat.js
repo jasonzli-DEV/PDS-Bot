@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const fetch = require('node-fetch');
+// Uses Node 18+ built-in fetch
 
 const CAT_API_KEY = 'live_yObVopPC6y94uHbV8VIX8Mpgz9hR0NNfelGEvxHnYTenNkAvOM3pQoUu7zWWZClI';
 

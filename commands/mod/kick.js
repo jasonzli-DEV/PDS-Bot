@@ -2,7 +2,7 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 
 const { getGuildSettings } = require('../../schemas/GuildSettings');
 
-function getRoleLevel(member) {
+function getRoleLevel(member, settings) {
     if (!settings) return 0;
     if (settings.ownerRoleId && member.roles.cache.has(settings.ownerRoleId)) return 3;
     if (settings.managerRoleId && member.roles.cache.has(settings.managerRoleId)) return 2;

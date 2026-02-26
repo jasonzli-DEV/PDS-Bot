@@ -6,6 +6,14 @@ function getRandomNumber(x, y) {
     return Math.floor(Math.random() * (y - x + 1)) + x;
 }
 
+function formatMs(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('beg')
@@ -30,9 +38,8 @@ module.exports = {
             let cooldown = await Cooldown.findOne({ userID, commandName });
 
             if (cooldown && Date.now() < cooldown.endsAt.getTime()) {
-                const prettyMs = (await import('pretty-ms')).default;
                 await interaction.editReply(
-                    `You are on cooldown, come back after ${prettyMs(cooldown.endsAt.getTime() - Date.now())}`
+                    `You are on cooldown, come back after ${formatMs(cooldown.endsAt.getTime() - Date.now())}`
                 );
                 return;
             }

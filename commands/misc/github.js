@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const fetch = require('node-fetch');
+// Uses Node 18+ built-in fetch
 
 module.exports = {
     data: new SlashCommandBuilder()
