@@ -218,14 +218,23 @@ async function handleTimezoneSelectMenu(interaction) {
         // Handle timezone selection
         const selectedTimezone = values[0];
         const userId = interaction.user.id;
+        const guildId = interaction.guildId;
+
+        if (!guildId) {
+            return await interaction.update({
+                content: '❌ Timezone can only be set from within a server.',
+                embeds: [],
+                components: []
+            });
+        }
 
         try {
             // Validate timezone
             new Date().toLocaleString('en-US', { timeZone: selectedTimezone });
 
-            let profile = await UserProfile.findOne({ userId });
+            let profile = await UserProfile.findOne({ userId, guildId });
             if (!profile) {
-                profile = new UserProfile({ userId });
+                profile = new UserProfile({ userId, guildId, balance: 0 });
             }
             profile.timezoneString = selectedTimezone;
             await profile.save();

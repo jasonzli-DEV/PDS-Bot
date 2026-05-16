@@ -271,7 +271,7 @@ async function handleButtonInteraction(interaction) {
     const { customId } = interaction;
     
     // Handle RPS buttons
-    if (customId === 'rps_challenge' || customId === 'rps_view_challenges' || customId === 'rps_ai' || customId === 'rps_user' || customId.startsWith('rps_choice_')) {
+    if (customId === 'rps_challenge' || customId === 'rps_view_challenges' || customId === 'rps_ai' || customId === 'rps_user' || customId.startsWith('rps_choice_') || customId.startsWith('rps_forfeit_')) {
         const { handleRPSButtonInteraction } = require('./commands/fun/rps');
         await handleRPSButtonInteraction(interaction);
     
