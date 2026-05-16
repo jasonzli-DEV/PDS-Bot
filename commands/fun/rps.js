@@ -648,8 +648,8 @@ async function handleBettingResult(result, player1Id, player2Id, betAmount, guil
             loserProfile = new UserProfile({ userId: loserId, guildId, balance: 0 });
         }
 
-        // Update balances
-        winnerProfile.balance += betAmount * 2; // Winner gets both bets
+        // Zero-sum transfer: winner receives the loser's bet
+        winnerProfile.balance += betAmount;
         loserProfile.balance -= betAmount;
 
         // Save profiles
@@ -1172,37 +1172,48 @@ async function endGame(interaction, gameId, result, gameData) {
     if (gameData.animationInterval) {
         clearInterval(gameData.animationInterval);
     }
-    
+
     interaction.client.rpsGames.delete(gameId);
-    
-    const winner = result === 'player1' ? 'You' : 'AI';
-    const coinsWon = gameData.betAmount * 2;
-    
+
+    const betAmount = gameData.betAmount;
+
     // Update database record
     gameData.matchRecord.status = 'completed';
     gameData.matchRecord.winner = result;
     gameData.matchRecord.endTime = new Date();
     gameData.matchRecord.duration = gameData.matchRecord.endTime - gameData.matchRecord.startTime;
-    gameData.matchRecord.coinsExchanged = result === 'player1' ? coinsWon : 0;
-    
+    gameData.matchRecord.coinsExchanged = result === 'player1' ? betAmount : 0;
+
     await gameData.matchRecord.save();
-    
-    if (result === 'player1') {
-        // Player wins - give them the coins
-        await handleBettingResult(interaction, gameData.guildId, gameData.player, coinsWon, true);
+
+    // Update player's balance directly (AI has no profile to debit/credit)
+    try {
+        let playerProfile = await UserProfile.findOne({ userId: gameData.player, guildId: gameData.guildId });
+        if (!playerProfile) {
+            playerProfile = new UserProfile({ userId: gameData.player, guildId: gameData.guildId, balance: 0 });
+        }
+        if (result === 'player1') {
+            playerProfile.balance += betAmount;
+        } else {
+            playerProfile.balance -= betAmount;
+        }
+        await playerProfile.save();
+    } catch (err) {
+        console.error('[RPS] Error updating player balance for AI game:', err);
     }
-    
+
+    const winnerLabel = result === 'player1' ? 'You' : 'AI';
     const embed = new EmbedBuilder()
         .setTitle('🎮 Game Over!')
         .setDescription(
-            `**${winner} won!**\n\n` +
+            `**${winnerLabel} won!**\n\n` +
             `Final Score: You ${gameData.playerWins} - ${gameData.aiWins} AI\n` +
-            `💰 ${result === 'player1' ? `You won ${coinsWon} coins!` : 'You lost your bet.'}`
+            `💰 ${result === 'player1' ? `You won ${betAmount} coins!` : `You lost ${betAmount} coins.`}`
         )
         .setColor(result === 'player1' ? '#00ff00' : '#ff0000');
-    
+
     await interaction.followUp({ embeds: [embed] });
-    
+
     // Send DM receipt to player
     try {
         const player = await interaction.client.users.fetch(gameData.player);
@@ -1211,11 +1222,11 @@ async function endGame(interaction, gameId, result, gameData) {
             .setDescription(
                 `You ${result === 'player1' ? 'won' : 'lost'} the RPS match against the AI!\n\n` +
                 `**Final Score:** You ${gameData.playerWins} - ${gameData.aiWins} AI\n` +
-                `💰 ${result === 'player1' ? `You won ${coinsWon} coins!` : `You lost ${gameData.betAmount} coins`}\n` +
+                `💰 ${result === 'player1' ? `You won ${betAmount} coins!` : `You lost ${betAmount} coins`}\n` +
                 `⏱️ Match duration: ${Math.round((gameData.matchRecord.endTime - gameData.matchRecord.startTime) / 1000)}s`
             )
             .setColor(result === 'player1' ? '#00ff00' : '#ff0000');
-        
+
         await player.send({ embeds: [receiptEmbed] });
     } catch (dmError) {
         console.error('Error sending AI game result DM:', dmError);
@@ -1234,31 +1245,31 @@ async function endPVPGame(interaction, gameId, result, gameData) {
     const player2 = await interaction.client.users.fetch(gameData.player2);
     const winner = result === 'player1' ? player1 : player2;
     const loser = result === 'player1' ? player2 : player1;
-    const coinsWon = gameData.betAmount * 2;
-    
+
     // Update database record
     gameData.matchRecord.status = 'completed';
     gameData.matchRecord.winner = result;
     gameData.matchRecord.endTime = new Date();
     gameData.matchRecord.duration = gameData.matchRecord.endTime - gameData.matchRecord.startTime;
-    gameData.matchRecord.coinsExchanged = coinsWon;
-    
+    gameData.matchRecord.coinsExchanged = gameData.betAmount;
+
     await gameData.matchRecord.save();
+
+    // Transfer coins: winner gains the loser's bet (zero-sum)
+    await handleBettingResult('player1', winner.id, loser.id, gameData.betAmount, gameData.guildId);
     
-    // Transfer coins to winner
-    await handleBettingResult(interaction, gameData.guildId, winner.id, coinsWon, true);
-    
+    const betAmount = gameData.betAmount;
     const embed = new EmbedBuilder()
         .setTitle('🎮 Game Over!')
         .setDescription(
             `**${winner.username} won!**\n\n` +
             `Final Score: ${player1.username} ${gameData.player1Wins} - ${gameData.player2Wins} ${player2.username}\n` +
-            `💰 ${winner.username} won ${coinsWon} coins!`
+            `💰 ${winner.username} won ${betAmount} coins!`
         )
         .setColor('#00ff00');
-    
+
     await interaction.followUp({ embeds: [embed] });
-    
+
     // Send DM receipts to both players
     try {
         const winnerReceipt = new EmbedBuilder()
@@ -1266,21 +1277,21 @@ async function endPVPGame(interaction, gameId, result, gameData) {
             .setDescription(
                 `Congratulations! You won the RPS match against ${loser.username}!\n\n` +
                 `**Final Score:** ${player1.username} ${gameData.player1Wins} - ${gameData.player2Wins} ${player2.username}\n` +
-                `💰 **You won ${coinsWon} coins!**\n` +
+                `💰 **You won ${betAmount} coins!**\n` +
                 `⏱️ Match duration: ${Math.round((gameData.matchRecord.endTime - gameData.matchRecord.startTime) / 1000)}s`
             )
             .setColor('#00ff00');
-        
+
         const loserReceipt = new EmbedBuilder()
             .setTitle('😔 Defeat')
             .setDescription(
                 `You lost the RPS match against ${winner.username}.\n\n` +
                 `**Final Score:** ${player1.username} ${gameData.player1Wins} - ${gameData.player2Wins} ${player2.username}\n` +
-                `💰 You lost ${gameData.betAmount} coins\n` +
+                `💰 You lost ${betAmount} coins\n` +
                 `⏱️ Match duration: ${Math.round((gameData.matchRecord.endTime - gameData.matchRecord.startTime) / 1000)}s`
             )
             .setColor('#ff0000');
-        
+
         await winner.send({ embeds: [winnerReceipt] });
         await loser.send({ embeds: [loserReceipt] });
     } catch (dmError) {
@@ -1338,14 +1349,6 @@ function startCountdown(interaction, gameId, seconds) {
     }, seconds * 1000);
     
     console.log(`⏰ Started ${seconds}s countdown for game ${gameId}`);
-}
-
-function determineWinner(choice1, choice2) {
-    if (choice1 === choice2) return 'tie';
-    if ((choice1 === 0 && choice2 === 2) || (choice1 === 1 && choice2 === 0) || (choice1 === 2 && choice2 === 1)) {
-        return 'player1';
-    }
-    return 'player2';
 }
 
 // RPS Interaction Handlers
@@ -1419,8 +1422,10 @@ async function handleRPSButtonInteraction(interaction) {
         });
         
     } else if (customId.startsWith('rps_choice_')) {
-        // Handle RPS choice selection
         await handleRPSChoice(interaction);
+    } else if (customId.startsWith('rps_forfeit_')) {
+        const gameId = customId.replace('rps_forfeit_', '');
+        await handleForfeit(interaction, gameId);
     }
 }
 

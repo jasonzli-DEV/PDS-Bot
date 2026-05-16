@@ -47,6 +47,8 @@ module.exports = {
     const amount = interaction.options.getInteger('amount');
     if (amount < 1) return interaction.reply({ content: 'Bet must be at least 1 coin.', flags: 64 });
 
+        await interaction.deferReply();
+
         // Load user profile
         const UserProfile = require('../../schemas/UserProfile');
         let userProfile = await UserProfile.findOne({ userId: interaction.user.id, guildId: interaction.guildId });
@@ -55,7 +57,7 @@ module.exports = {
             await userProfile.save();
         }
         if (userProfile.balance < amount) {
-            return interaction.reply({ content: `You don't have enough coins! Your balance: ${userProfile.balance} coins`, flags: 64 });
+            return interaction.editReply({ content: `You don't have enough coins! Your balance: ${userProfile.balance} coins` });
         }
 
         // Initial hands
@@ -73,7 +75,7 @@ module.exports = {
             .setDescription(
                 `Your hand: ${playerHand.map(c => `${c.value}${c.suit}`).join(' ')} (${playerValue})\n` +
                 `Dealer shows: ${dealerHand[0].value}${dealerHand[0].suit} (${getHandValue([dealerHand[0]])})\n` +
-                `Bet: **${amount}** coins\n\nReact with 🟩 to Hit or 🟥 to Stand.`
+                `Bet: **${amount}** coins\n\nClick **Hit** or **Stand** below.`
             )
             .setColor('#2ecc40');
 
@@ -85,7 +87,7 @@ module.exports = {
             ]
         };
 
-        await interaction.reply({ embeds: [embed], components: [row] });
+        await interaction.editReply({ embeds: [embed], components: [row] });
 
         // Collector for button interactions
         const filter = i => i.user.id === interaction.user.id;
@@ -130,7 +132,7 @@ module.exports = {
                 .setDescription(
                     `Your hand: ${playerHand.map(c => `${c.value}${c.suit}`).join(' ')} (${playerValue})\n` +
                     `Dealer shows: ${dealerHand[0].value}${dealerHand[0].suit} (${getHandValue([dealerHand[0]])})\n` +
-                    (gameOver ? `\n${resultMsg}` : `Bet: **${amount}** coins\n\nReact with 🟩 to Hit or 🟥 to Stand.`)
+                    (gameOver ? `\n${resultMsg}` : `Bet: **${amount}** coins\n\nClick **Hit** or **Stand** below.`)
                 )
                 .setColor(gameOver ? (resultMsg.includes('win') ? '#2ecc40' : '#e74c3c') : '#2ecc40');
             await i.update({ embeds: [newEmbed], components: gameOver ? [] : [row] });
