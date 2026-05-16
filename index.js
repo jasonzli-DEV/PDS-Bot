@@ -206,7 +206,7 @@ client.on('messageCreate', stickyHandler);
 client.once(Events.ClientReady, async () => {
     console.log(`✅ Bot is ready! Logged in as ${client.user.tag}`);
     console.log(`📊 Bot is in ${client.guilds.cache.size} guilds`);
-    
+
     // Deploy commands first
     try {
         await deployCommands();
@@ -224,18 +224,16 @@ client.once(Events.ClientReady, async () => {
     console.log(`   Status: ${process.env.BOT_STATUS || 'online'}`);
     console.log(`   Activity: ${process.env.ACTIVITY_NAME || 'Discord'}`);
     console.log(`   Type: ${process.env.ACTIVITY_TYPE || 'COMPETING'}`);
-    console.log(`   Rotation: ${process.env.ROTATE_STATUS !== 'false' ? 'Enabled' : 'Disabled'}`);
-    
+
     // Set initial bot status from environment variables
     setBotStatus('online', true);
-    
+
     // Global voice channel connection (if VOICE_CHANNEL_ID is set in .env)
     if (process.env.VOICE_CHANNEL_ID) {
         console.log('🎵 Attempting to join global voice channel...');
         await connectToVoiceChannel(client, process.env.VOICE_CHANNEL_ID);
     } else {
         console.log('ℹ️ No VOICE_CHANNEL_ID set in .env - skipping voice connection');
-        // Show ready message immediately if no voice channel is configured
         setTimeout(() => {
             if (!global.botStartupComplete) {
                 console.log('bun-app-started');
@@ -244,8 +242,19 @@ client.once(Events.ClientReady, async () => {
             }
         }, 1000);
     }
-    
-    // Bot status only uses .env values, no rotation
+
+    // Leaderboard update on startup and every minute
+    await updateLeaderboards(client);
+    setInterval(() => updateLeaderboards(client), 60 * 1000);
+    console.log('[Leaderboard] Leaderboard system initialized and will update every minute for configured servers.');
+
+    // RAM logging every 30 minutes
+    setInterval(() => {
+        const used = process.memoryUsage();
+        const ramUsage = Math.round(used.heapUsed / 1024 / 1024 * 100) / 100;
+        const ramTotal = 2048;
+        console.log(`[RAM] Usage: ${ramUsage}MB / ${ramTotal}MB (${Math.round(ramUsage/ramTotal*100)}%)`);
+    }, 30 * 60 * 1000);
 });
 
 // Error handling
@@ -548,19 +557,3 @@ async function updateLeaderboards(client) {
     }
 }
 
-// Leaderboard and final setup
-client.once(Events.ClientReady, async () => {
-    // Leaderboard update on startup and every minute (now uses per-server configuration)
-    await updateLeaderboards(client); // Initial update
-    setInterval(() => updateLeaderboards(client), 60 * 1000);
-    console.log('[Leaderboard] Leaderboard system initialized and will update every minute for configured servers.');
-
-    // RAM logging every 30 minutes
-    setInterval(() => {
-        const used = process.memoryUsage();
-        const ramUsage = Math.round(used.heapUsed / 1024 / 1024 * 100) / 100;
-        const ramTotal = 2048;
-        console.log(`[RAM] Usage: ${ramUsage}MB / ${ramTotal}MB (${Math.round(ramUsage/ramTotal*100)}%)`);
-    }, 30 * 60 * 1000); // 30 minutes
-    
-});

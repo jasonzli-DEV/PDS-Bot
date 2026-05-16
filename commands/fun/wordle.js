@@ -5,8 +5,9 @@ module.exports = {
         .setName('wordle')
         .setDescription("Show today's Wordle answer!"),
     async execute(interaction) {
+        await interaction.deferReply({ flags: 64 });
+
         const UserProfile = require('../../schemas/UserProfile');
-        // Check timezone BEFORE deferring so we can reply ephemerally if not set
         const guildId = interaction.guildId;
         const profile = await UserProfile.findOne(guildId
             ? { userId: interaction.user.id, guildId }
@@ -14,7 +15,6 @@ module.exports = {
         );
 
         if (!profile || !profile.timezoneString) {
-            // No timezone set - prompt user to set it (ephemeral, no defer needed)
             const embed = new EmbedBuilder()
                 .setTitle('⚠️ Timezone Not Set')
                 .setDescription('You haven\'t set your timezone yet! Set it to see the Wordle answer for your local date.')
@@ -31,10 +31,8 @@ module.exports = {
                         .setStyle(ButtonStyle.Primary)
                 );
 
-            return await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+            return await interaction.editReply({ embeds: [embed], components: [row] });
         }
-
-        await interaction.deferReply();
         let timezone = profile.timezoneString;
         let offset = 0;
         try {

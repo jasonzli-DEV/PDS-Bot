@@ -6,15 +6,20 @@ module.exports = {
         .setName('date')
         .setDescription('Shows the current date and time.'),
     async execute(interaction) {
+        await interaction.deferReply();
+
         const UserProfile = require('../../schemas/UserProfile');
+        const guildId = interaction.guildId;
         let now = new Date();
         let timezone = 'UTC';
         let offset = 0;
-        
-        const profile = await UserProfile.findOne({ userId: interaction.user.id });
+
+        const profile = await UserProfile.findOne(guildId
+            ? { userId: interaction.user.id, guildId }
+            : { userId: interaction.user.id }
+        );
         if (profile && profile.timezoneString) {
             timezone = profile.timezoneString;
-            // Calculate current offset for display
             try {
                 const utc = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
                 const local = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
@@ -23,7 +28,6 @@ module.exports = {
                 timezone = 'UTC';
             }
         } else {
-            // No timezone set - prompt user to set it
             const embed = new EmbedBuilder()
                 .setTitle('⚠️ Timezone Not Set')
                 .setDescription('You haven\'t set your timezone yet! Set it to see the date and time in your local timezone.')
@@ -40,14 +44,13 @@ module.exports = {
                         .setStyle(ButtonStyle.Primary)
                 );
 
-            return await interaction.reply({ embeds: [embed], components: [row] });
+            return await interaction.editReply({ embeds: [embed], components: [row] });
         }
-        
-        // Get local time using timezone string
+
         const localTime = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
         const dateString = localTime.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
         const timeString = localTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-        
+
         const embed = new EmbedBuilder()
             .setTitle('Current Date & Time')
             .addFields(
@@ -57,6 +60,6 @@ module.exports = {
             )
             .setColor(0x00AE86)
             .setTimestamp(localTime);
-        await interaction.reply({ embeds: [embed] });
+        await interaction.editReply({ embeds: [embed] });
     }
 };
